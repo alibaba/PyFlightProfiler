@@ -3,6 +3,7 @@
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/flight_profiler)
 ![PyPI - Implementation](https://img.shields.io/pypi/implementation/flight_profiler)
 ![PyPI](https://img.shields.io/pypi/v/flight_profiler)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/flight_profiler)
 
 > A diagnostic toolbox for Python applications that provides non-intrusive, low-overhead capabilities for online analysis.
 
