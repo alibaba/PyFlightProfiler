@@ -252,7 +252,7 @@ def check_directory_write_permission(directory: str) -> bool:
 
     Args
         directory(str): The directory path to check
-        
+
     Returns:
         True if write permission is available, False otherwise
     """

@@ -259,8 +259,8 @@ TRACE_COMMAND_DESCRIPTION = CommandDescription(
         ),
         (
             "-d, --depth <value>",
-            "display the method call stack limited to the specified depth ${value}. "
-            "Particularly useful when combined with '-i 0' for stack inspection.",
+            "display the method call stack, limited to the specified depth ${value}. When a depth is specified, "
+            "the ${interval} parameter is ignored and its value is constrained to 0.",
         ),
         (
             "-nm, --nested-method",

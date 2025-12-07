@@ -164,7 +164,7 @@ OPTIONS:
 <method>                           target method name.
 -i, --interval <value>             display function invocation cost more than ${value} milliseconds, default is 0.1ms.
 -et, --entrance_time <value>       filter function execute cost more than ${value} milliseconds, but on entrance filter.
--d, --depth <value>                display the method call stack limited to the specified depth ${value}. Particularly useful when combined with '-i 0' for stack inspection.
+-d, --depth <value>                display the method call stack, limited to the specified depth ${value}. When a depth is specified, the ${interval} parameter is ignored and its value is constrained to 0.
 -nm, --nested-method               trace nested method with depth restrict to 1.
 -f, --filter_expr <value>          filter method params expressions, only support filter target&args, write python bool statement like input func args is (target, *args, **kwargs), eg: args[0]=='hello'.
 -n, --limits <value>               threshold of trace method times, default is 10.
