@@ -20,7 +20,7 @@ flight_profiler pid
 
 You can then start entering debugging commands.
 
-![](images/attach_success.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/attach_success.png)
 
 # Command Guide
 ## Command Description: help
@@ -36,7 +36,7 @@ help [command]
 | command | No | The command name to view | stack |
 
 ### Output Display
-![img.png](images/help.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/help.png)
 
 ## Thread Stack Analysis: stack
 ### Thread Stack: stack
@@ -70,11 +70,11 @@ stack -f ./stack.log
 
 Executing the `stack` command will display stack information for all threads in the console.
 
-![img.png](images/stack_linux.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/stack_linux.png)
 
 Analyzing native thread stacks:
 
-![img.png](images/stack_linux_native.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/stack_linux_native.png)
 
 #### Mac Environment
 View Python execution stack information for all threads currently running in the process, and support exporting to files.
@@ -91,7 +91,7 @@ stack [filepath]
 ##### Output Display
 Executing the `stack` command will display stack information for all threads in the console.
 
-![img.png](images/stack_mac.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/stack_mac.png)
 
 
 ## Method Execution Observation: watch
@@ -142,7 +142,7 @@ watch __main__ func --expr "{return_obj,args}" -f "cost>10"
 watch __main__ classA func
 ```
 
-![](images/watch.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/watch.png)
 
 Output field information includes:
 
@@ -186,7 +186,7 @@ trace __main__ func -i 1
 trace __main__ classA func
 ```
 
-![](images/trace.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/trace.png)
 
 ## Cross-Time Method Call Observation: tt
 ### Observing Method Calls Across Time Periods
@@ -241,17 +241,17 @@ tt -t __main__ func -f "args[0][\"query\"]=='hello'"
 
 Observing method calls:
 
-![](images/timetunnel_1.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/timetunnel_1.png)
 
 Specifying index:
 
-![](images/timetunnel_2.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/timetunnel_2.png)
 
 Re-executing historical calls:
 
 It can be seen that the index has changed: 1000 -> 1010
 
-![](images/timetunnel_3.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/timetunnel_3.png)
 
 ## Global Variable Viewing: getglobal
 ### Observing Module Global Variables/Class Static Variables
@@ -283,7 +283,7 @@ getglobal __main__ g_list
 getglobal __main__ classA static_field
 ```
 
-![](images/getglobal.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/getglobal.png)
 
 ## PythonVm Tools: vmtool
 ### Viewing Class Instances: getInstances
@@ -315,7 +315,7 @@ vmtool -a getInstances -c __main__ A
 vmtool -a getInstances -c __main__ A -e instances[0].val
 ```
 
-![img.png](images/vmtool.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/vmtool.png)
 
 ### Force Garbage Collection: forceGc
 Command as follows:
@@ -329,7 +329,7 @@ vmtool -a forceGc
 vmtool -a forceGc
 ```
 
-![img.png](images/vmtool_gc.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/vmtool_gc.png)
 
 ## Get File Module Name: module
 This command will output the module corresponding to the filename in the injected process, facilitating users to directly locate methods or variables based on exception stacks.
@@ -356,9 +356,9 @@ module ~/tt_main.py
 module ~/not_exist.py
 ```
 
-![img.png](images/module_exist.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/module_exist.png)
 
-![img.png](images/module_not_exist.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/module_not_exist.png)
 
 ## Program Hotspot Flame Graph: Perf
 Sample profile the program process to generate flame graphs, facilitating users to optimize program hotspots, implemented based on [py-spy](https://github.com/benfred/py-spy).
@@ -392,7 +392,7 @@ perf -d 30 -f ~/flamegraph.svg
 
 <font style="color:#DF2A3F;">Using this command on MacOS requires root permissions for py-spy</font>
 
-![img.png](images/perf.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/perf.png)
 
 ## Enable Interactive Console
 Enable interactive console in the specified process, supporting users to execute custom scripts, get system properties, and other operations.
@@ -410,7 +410,7 @@ Command examples:
 console
 ```
 
-![img.png](images/console.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/console.png)
 
 
 
@@ -428,7 +428,7 @@ mem summary --limit 100 --order descending
 
 Where the `limit` parameter controls the number of TOP items displayed, and `order` controls sorting in descending or ascending order (descending/ascending).
 
-![img.png](images/mem_summary.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/mem_summary.png)
 
 ### Memory Diff
 This command can compare memory size differences between two time points:
@@ -439,7 +439,7 @@ mem diff --interval 10 --limit 100 --order descending
 
 As shown in the above command, take memory snapshots before and after 10s, compare differences, and display memory variable types with the largest differences in descending order, as shown below:
 
-![img.png](images/mem_diff.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/mem_diff.png)
 
 ## GIL Lock Performance Analysis
 ### GIL Lock Loss Statistics
@@ -449,7 +449,7 @@ gilstat on
 
 After executing the `gilstat on` command, the console will output GIL lock loss statistics for each thread every 5 seconds.
 
-![img.png](images/gilstat_on.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/gilstat_on.png)
 
 Output information fields include:
 
@@ -470,7 +470,7 @@ gilstat on 5 5
 
 The first parameter 5 represents the GIL lock acquisition time threshold of 5ms and the GIL lock holding time threshold of 5ms. That is, when a thread's GIL lock acquisition blocking exceeds 5ms, or a thread's GIL lock holding time exceeds 5ms, a monitoring message will be printed. This command can analyze some long-tail timeout queries in production.
 
-![](images/gilstat_report.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/gilstat_report.png)
 
 ## PyTorch Framework Sampling
 ### Sampling Function Execution: profile
@@ -499,11 +499,11 @@ Command examples:
 torch profile __main__ A hello
 ```
 
-![](images/torch_profile_1.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/torch_profile_1.png)
 
 The generated trace.json file needs to be placed in the <font style="color:#DF2A3F;">chrome://tracing/</font><font style="color:rgb(0, 0, 0);"> path of the Chrome browser for visualization, as shown in the result below</font>
 
-![](images/torch_profile_2.png)
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/torch_profile_2.png)
 
 ### torch Memory Snapshot
 Implemented based on Torch Profiler, able to snapshot memory space used by the process, or record memory allocation behavior during method execution:
@@ -534,7 +534,7 @@ torch memory -r __main__ Solution call
 
 The generated snapshot.pickle file needs to be analyzed in [https://pytorch.org/memory_viz](https://pytorch.org/memory_viz)<font style="color:rgb(0, 0, 0);">, as shown in the result below, where the left list shows the timing behavior of allocation and collection:</font>
 
-![img.png](images/torch_mem_profile1.png)
+![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/torch_mem_profile1.png)
 
 For specific principles/how to get effective information from the graph: [https://pytorch.org/docs/2.5/torch_cuda_memory.html](https://pytorch.org/docs/2.5/torch_cuda_memory.html)
 

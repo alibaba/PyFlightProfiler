@@ -107,7 +107,6 @@ typedef struct trace_profiler {
   PyObject *on_sending_frame;     // frames that ready to be sent
   PyObject *out_queue;            // sending queue
   FrameNode *top;                 // frame stack top
-  Py_ssize_t sz;                  // frame stack size
   Py_ssize_t sf_sz;               // sending frame size
   Py_ssize_t is_async;            // async function
   long long interval;             // interval
@@ -248,7 +247,7 @@ static void TraceProfiler_PushFrame(TraceProfiler *self, Py_ssize_t start_ns) {
   node->prev = (PyObject *)self->top;
   node->start_ns = start_ns;
   node->offset = self->sf_sz;
-  self->sz += 1;
+
   self->sf_sz += 1;
   self->top = node;
 }
@@ -259,7 +258,6 @@ static void TraceProfiler_PushFrameWithDepth(TraceProfiler *self,
   node->prev = (PyObject *)self->top;
   node->start_ns = start_ns;
   node->offset = self->sf_sz;
-  self->sz += 1;
   self->sf_sz += 1;
   self->top = node;
   self->current_depth += 1;
@@ -279,7 +277,7 @@ static void TraceProfiler_InnerPushAsyncFrame(TraceProfiler *self,
   node->prev = (PyObject *)self->top;
   node->start_ns = start_ns;
   node->offset = self->sf_sz;
-  self->sz += 1;
+
   self->sf_sz += 1;
   node->frame_desp = frame_desp;
   self->top = node;
@@ -300,7 +298,7 @@ static void TraceProfiler_InnerPushAsyncFrameWithDepth(TraceProfiler *self,
   node->prev = (PyObject *)self->top;
   node->start_ns = start_ns;
   node->offset = self->sf_sz;
-  self->sz += 1;
+
   self->sf_sz += 1;
   node->frame_desp = frame_desp;
   self->current_depth += 1;
@@ -309,68 +307,90 @@ static void TraceProfiler_InnerPushAsyncFrameWithDepth(TraceProfiler *self,
 }
 
 static void TraceProfiler_FinishUnclosedAsyncFrame(TraceProfiler *self) {
-  Py_ssize_t children_len = PyList_Size(self->top->succ);
-  if (children_len == 0) {
-    return;
-  }
-  FrameNode *last_async_node = pop_last_element(self->top->succ, children_len);
-  Py_ssize_t size = PyList_Size(last_async_node->enter_timestamp);
-  PyObject *last_element =
-      PyList_GetItem(last_async_node->enter_timestamp, size - 1);
-  long long last_leave_ns = PyLong_AsLongLong(last_element);
+  FrameNode *current_top = self->top;
+  Py_ssize_t children_len = PyList_Size(current_top->succ);
+  while (children_len > 0) {
+    FrameNode *last_async_node =
+        pop_last_element(current_top->succ, children_len);
+    Py_ssize_t size = PyList_Size(last_async_node->enter_timestamp);
+    PyObject *last_element =
+        PyList_GetItem(last_async_node->enter_timestamp, size - 1);
+    long long last_leave_ns = PyLong_AsLongLong(last_element);
 
-  PyObject *first_element = PyList_GetItem(last_async_node->enter_timestamp, 0);
-  long long last_async_start_ns = PyLong_AsLongLong(first_element);
-  long long cost_ns = last_leave_ns - last_async_start_ns;
+    PyObject *first_element =
+        PyList_GetItem(last_async_node->enter_timestamp, 0);
+    long long last_async_start_ns = PyLong_AsLongLong(first_element);
+    long long cost_ns = last_leave_ns - last_async_start_ns;
 
-  if (cost_ns >= self->interval) {
-    Py_ssize_t pid = self->top->offset;
-    PyObject *frame_desp = build_last_async_frame(
-        last_async_node->frame_desp, last_async_start_ns, cost_ns, pid);
-    Py_ssize_t real_sf_sz = PyList_Size(self->on_sending_frame);
-    long long distance = last_async_node->offset + 1 - real_sf_sz;
-    long long idx;
-    for (idx = 0; idx < distance; idx++) {
-      PyList_Append(self->on_sending_frame, Py_None);
+    if (cost_ns >= self->interval) {
+      Py_ssize_t pid = current_top->offset;
+      PyObject *frame_desp = build_last_async_frame(
+          last_async_node->frame_desp, last_async_start_ns, cost_ns, pid);
+      Py_ssize_t real_sf_sz = PyList_Size(self->on_sending_frame);
+      long long distance = last_async_node->offset + 1 - real_sf_sz;
+      long long idx;
+      for (idx = 0; idx < distance; idx++) {
+        PyList_Append(self->on_sending_frame, Py_None);
+      }
+      PyList_SetItem(self->on_sending_frame, last_async_node->offset,
+                     frame_desp);
+      if (current_top != self->top) {
+        Py_DECREF(current_top);
+      }
+      current_top = last_async_node;
+      children_len = PyList_Size(current_top->succ);
+    } else {
+      Py_DECREF(last_async_node);
+      break;
     }
-    PyList_SetItem(self->on_sending_frame, last_async_node->offset, frame_desp);
-  } else {
-    self->sf_sz -= 1;
   }
-  Py_DECREF(last_async_node);
+  if (current_top != self->top) {
+    Py_DECREF(current_top);
+  }
 }
 
 static void
 TraceProfiler_FinishUnclosedAsyncFrameWithDepth(TraceProfiler *self) {
-  Py_ssize_t children_len = PyList_Size(self->top->succ);
-  if (children_len == 0) {
-    return;
-  }
-  FrameNode *last_async_node = pop_last_element(self->top->succ, children_len);
-  Py_ssize_t size = PyList_Size(last_async_node->enter_timestamp);
-  PyObject *last_element =
-      PyList_GetItem(last_async_node->enter_timestamp, size - 1);
-  long long last_leave_ns = PyLong_AsLongLong(last_element);
+  FrameNode *current_top = self->top;
+  Py_ssize_t children_len = PyList_Size(current_top->succ);
+  while (children_len > 0) {
+    FrameNode *last_async_node =
+        pop_last_element(current_top->succ, children_len);
+    Py_ssize_t size = PyList_Size(last_async_node->enter_timestamp);
+    PyObject *last_element =
+        PyList_GetItem(last_async_node->enter_timestamp, size - 1);
+    long long last_leave_ns = PyLong_AsLongLong(last_element);
 
-  PyObject *first_element = PyList_GetItem(last_async_node->enter_timestamp, 0);
-  long long last_async_start_ns = PyLong_AsLongLong(first_element);
-  long long cost_ns = last_leave_ns - last_async_start_ns;
+    PyObject *first_element =
+        PyList_GetItem(last_async_node->enter_timestamp, 0);
+    long long last_async_start_ns = PyLong_AsLongLong(first_element);
+    long long cost_ns = last_leave_ns - last_async_start_ns;
 
-  if (self->current_depth < self->depth_limit) {
-    Py_ssize_t pid = self->top->offset;
-    PyObject *frame_desp = build_last_async_frame(
-        last_async_node->frame_desp, last_async_start_ns, cost_ns, pid);
-    Py_ssize_t real_sf_sz = PyList_Size(self->on_sending_frame);
-    long long distance = last_async_node->offset + 1 - real_sf_sz;
-    long long idx;
-    for (idx = 0; idx < distance; idx++) {
-      PyList_Append(self->on_sending_frame, Py_None);
+    if (self->current_depth < self->depth_limit) {
+      Py_ssize_t pid = current_top->offset;
+      PyObject *frame_desp = build_last_async_frame(
+          last_async_node->frame_desp, last_async_start_ns, cost_ns, pid);
+      Py_ssize_t real_sf_sz = PyList_Size(self->on_sending_frame);
+      long long distance = last_async_node->offset + 1 - real_sf_sz;
+      long long idx;
+      for (idx = 0; idx < distance; idx++) {
+        PyList_Append(self->on_sending_frame, Py_None);
+      }
+      PyList_SetItem(self->on_sending_frame, last_async_node->offset,
+                     frame_desp);
+      if (current_top != self->top) {
+        Py_DECREF(current_top);
+      }
+      current_top = last_async_node;
+      children_len = PyList_Size(current_top->succ);
+    } else {
+      Py_DECREF(last_async_node);
+      break;
     }
-    PyList_SetItem(self->on_sending_frame, last_async_node->offset, frame_desp);
-  } else {
-    self->sf_sz -= 1;
   }
-  Py_DECREF(last_async_node);
+  if (current_top != self->top) {
+    Py_DECREF(current_top);
+  }
 }
 
 static void TraceProfiler_PushAsyncFrame(TraceProfiler *self,
@@ -508,7 +528,7 @@ static FrameNode *TraceProfiler_PopFrame(TraceProfiler *self) {
   FrameNode *top_frame = (FrameNode *)self->top;
   self->top = (FrameNode *)top_frame->prev;
   top_frame->prev = NULL;
-  self->sz -= 1;
+
   return top_frame;
 }
 
@@ -516,7 +536,7 @@ static FrameNode *TraceProfiler_PopFrameWithDepth(TraceProfiler *self) {
   FrameNode *top_frame = (FrameNode *)self->top;
   self->top = (FrameNode *)top_frame->prev;
   top_frame->prev = NULL;
-  self->sz -= 1;
+
   self->current_depth -= 1;
   return top_frame;
 }
@@ -531,7 +551,7 @@ static FrameNode *TraceProfiler_PopFrameAsync(TraceProfiler *self,
     FrameNode *top_frame = (FrameNode *)self->top;
     self->top = (FrameNode *)top_frame->prev;
     top_frame->prev = NULL;
-    self->sz -= 1;
+
     return top_frame;
   } else {
     PyObject *e_time_obj = PyLong_FromLong(end_time);
@@ -554,7 +574,7 @@ static FrameNode *TraceProfiler_PopFrameAsyncWithDepth(TraceProfiler *self,
     FrameNode *top_frame = (FrameNode *)self->top;
     self->top = (FrameNode *)top_frame->prev;
     top_frame->prev = NULL;
-    self->sz -= 1;
+
     self->current_depth -= 1;
     return top_frame;
   } else {
@@ -688,7 +708,6 @@ static TraceProfiler *TraceProfiler_New(long long interval, Py_ssize_t is_async,
   trace_profiler->current_depth = 0;
   trace_profiler->depth_limit = depth_limit;
 
-  trace_profiler->sz = 1;
   trace_profiler->on_sending_frame = PyList_New(0);
   trace_profiler->out_queue = NULL;
   return trace_profiler;

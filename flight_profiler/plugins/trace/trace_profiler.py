@@ -37,7 +37,6 @@ class TraceProfiler:
     ):
         self.target = target
         self.on_sending_frame = []
-        self.sz = 1
         self.sf_sz = 0
         self.current_depth = 0
         self.depth_limit = depth_limit
@@ -55,7 +54,6 @@ class TraceProfiler:
         nd.prev = self.top
         nd.frame_desp = f_info
 
-        self.sz += 1
         self.sf_sz += 1
         self.top = nd
 
@@ -64,42 +62,48 @@ class TraceProfiler:
         self.current_depth += 1
 
     def finish_unclosed_async_frame(self) -> None:
-        if len(self.top.succ) > 0:
-            # it means in previous async function, there is no context switch happens
-            last_async_node: FrameNode = self.top.succ.pop(-1)
+        current_top = self.top
+        while len(current_top.succ) > 0:
+            last_async_node: FrameNode = current_top.succ.pop(-1)
             last_leave_ns = last_async_node.enter_timestamp[-1]
             last_async_start_ns = last_async_node.enter_timestamp[0]
             cost_ns = last_leave_ns - last_async_start_ns
             if cost_ns >= self.interval:
-                pid = self.top.offset
+                pid = current_top.offset
                 frame_desp = self.build_last_async_frame(
                     last_async_node.frame_desp, last_async_start_ns, cost_ns, pid
                 )
                 dif = last_async_node.offset + 1 - len(self.on_sending_frame)
+                # todo we ignore interval here
                 for _ in range(dif):
                     self.on_sending_frame.append(None)
                 self.on_sending_frame[last_async_node.offset] = frame_desp
+                current_top = last_async_node
             else:
-                self.sf_sz -= 1
+                break
 
     def finish_unclosed_async_frame_with_depth(self) -> None:
-        if len(self.top.succ) > 0:
-            # it means in previous async function, there is no context switch happens
-            last_async_node: FrameNode = self.top.succ.pop(-1)
+
+        current_top = self.top
+        while len(current_top.succ) > 0:
+            last_async_node: FrameNode = current_top.succ.pop(-1)
             last_leave_ns = last_async_node.enter_timestamp[-1]
             last_async_start_ns = last_async_node.enter_timestamp[0]
             cost_ns = last_leave_ns - last_async_start_ns
             if self.current_depth < self.depth_limit:
-                pid = self.top.offset
+                pid = current_top.offset
                 frame_desp = self.build_last_async_frame(
                     last_async_node.frame_desp, last_async_start_ns, cost_ns, pid
                 )
                 dif = last_async_node.offset + 1 - len(self.on_sending_frame)
+                # todo we ignore interval here
                 for _ in range(dif):
                     self.on_sending_frame.append(None)
                 self.on_sending_frame[last_async_node.offset] = frame_desp
+                current_top = last_async_node
             else:
-                self.sf_sz -= 1
+                break
+
 
     def inner_push_async_frame(self, start_ns: int, f_info: str, frame_id: int):
         nd = FrameNode()
@@ -110,7 +114,6 @@ class TraceProfiler:
         nd.prev = self.top
         nd.frame_desp = f_info
 
-        self.sz += 1
         self.sf_sz += 1
         self.top = nd
 
@@ -171,7 +174,7 @@ class TraceProfiler:
                     #     f = future()
                     #     await ff() # normal async function
                     #     await f # switch context
-                    self.current_depth += 1
+                    self.top = self.top.succ[-1]
             # current the top node is pushed and not root(offset == -1)
             # todo do we need to clear previous undefined
             else:
@@ -241,7 +244,6 @@ class TraceProfiler:
         self.top = self.top.prev
 
         nd.prev = None
-        self.sz -= 1
         return nd
 
     def pop_frame_with_depth(self) -> FrameNode:
@@ -251,10 +253,8 @@ class TraceProfiler:
         self.top = self.top.prev
 
         nd.prev = None
-        self.sz -= 1
         self.current_depth -= 1
         return nd
-
 
     def pop_frame_async(
         self, is_async_frame: bool = False, end_time: int = None
@@ -266,7 +266,6 @@ class TraceProfiler:
             nd = self.top
             self.top = self.top.prev
             nd.prev = None
-            self.sz -= 1
             return nd
         else:
             nd = self.top
@@ -284,7 +283,6 @@ class TraceProfiler:
             nd = self.top
             self.top = self.top.prev
             nd.prev = None
-            self.sz -= 1
             self.current_depth -= 1
             return nd
         else:
@@ -418,12 +416,12 @@ class TraceProfiler:
             if self.first:
                 self.first = False
                 return
-            # print(
-            #     f"Is Coroutine: {frame.f_code.co_flags & 0x80}"
-            #     f" time: {time.time() * 1000}"
-            #     f" event: {event} "
-            #     f" frame: {self.get_frame_info(frame, 0, 0, 0, arg, 1 if 'c_' in event else 0)}"
-            # )
+            print(
+                f"Is Coroutine: {frame.f_code.co_flags & 0x80}"
+                f" time: {time.time() * 1000}"
+                f" event: {event} "
+                f" frame: {self.get_frame_info(frame, 0, 0, 0, arg, 1 if 'c_' in event else 0)}"
+            )
 
             c_time = time.time_ns()
             if event == "call" or event == "c_call":
@@ -439,7 +437,7 @@ class TraceProfiler:
                 else:
                     c_frame = 0
                 cost_ns = c_time - frame_node.start_ns
-                if cost_ns >= self.interval and (self.depth_limit == -1 or self.current_depth < self.depth_limit):
+                if cost_ns >= self.interval:
                     info = self.get_frame_info(
                         frame,
                         frame_node.start_ns,
@@ -464,13 +462,13 @@ class TraceProfiler:
                 self.first = False
                 return
 
-            # print(
-            #     f"Async Path Is Coroutine: {frame.f_code.co_flags & 0x80}"
-            #     f" time: {time.time() * 1000}"
-            #     f" event: {event} "
-            #     f" frame: {self.get_frame_info(frame, 0, 0, 0, arg, 1 if 'c_' in event else 0)},"
-            #     f" frame_id: {id(frame)}"
-            # )
+            print(
+                f"Async Path Is Coroutine: {frame.f_code.co_flags & 0x80}"
+                f" time: {time.time() * 1000}"
+                f" event: {event} "
+                f" frame: {self.get_frame_info(frame, 0, 0, 0, arg, 1 if 'c_' in event else 0)},"
+                f" frame_id: {id(frame)}"
+            )
 
             is_async_frame = (
                 frame.f_code.co_flags & 0x80 > 0
@@ -522,12 +520,12 @@ class TraceProfiler:
             if self.first:
                 self.first = False
                 return
-            # print(
-            #     f"Is Coroutine: {frame.f_code.co_flags & 0x80}"
-            #     f" time: {time.time() * 1000}"
-            #     f" event: {event} "
-            #     f" frame: {self.get_frame_info(frame, 0, 0, 0, arg, 1 if 'c_' in event else 0)}"
-            # )
+            print(
+                f"Is Coroutine: {frame.f_code.co_flags & 0x80}"
+                f" time: {time.time() * 1000}"
+                f" event: {event} "
+                f" frame: {self.get_frame_info(frame, 0, 0, 0, arg, 1 if 'c_' in event else 0)}"
+            )
 
             c_time = time.time_ns()
             if event == "call" or event == "c_call":
@@ -568,13 +566,13 @@ class TraceProfiler:
                 self.first = False
                 return
 
-            # print(
-            #     f"Async Path Is Coroutine: {frame.f_code.co_flags & 0x80}"
-            #     f" time: {time.time() * 1000}"
-            #     f" event: {event} "
-            #     f" frame: {self.get_frame_info(frame, 0, 0, 0, arg, 1 if 'c_' in event else 0)},"
-            #     f" frame_id: {id(frame)}"
-            # )
+            print(
+                f"Async Path Is Coroutine: {frame.f_code.co_flags & 0x80}"
+                f" time: {time.time() * 1000}"
+                f" event: {event} "
+                f" frame: {self.get_frame_info(frame, 0, 0, 0, arg, 1 if 'c_' in event else 0)},"
+                f" frame_id: {id(frame)}"
+            )
 
             is_async_frame = (
                 frame.f_code.co_flags & 0x80 > 0
@@ -626,6 +624,7 @@ class TraceProfiler:
                 self.fulfill_async_unfinished_requests()
             else:
                 self.fulfill_async_unfinished_requests_with_depth()
+            self.target(self.out_q, self.on_sending_frame)
 
 
 def set_trace_profile(
