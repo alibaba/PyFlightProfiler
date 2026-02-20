@@ -192,6 +192,7 @@ PyFlightProfiler includes several additional tools for advanced diagnostics:
 - `console` - Launch an interactive Python console inside the target process.
 - `stack` - Analyze Python thread stacks (based on [pystack](https://github.com/bloomberg/pystack)).
 - `tt, timetunnel` - Observe method behavior across time (historical execution context).
+- `reload` - Reload method implementation from the latest source file.
 - `getglobal` - Inspect global variables in the target process.
 - `vmtool` - Inspect live class instances and their attributes.
 - `perf` - Sample CPU hotspots and generate flame graphs (based on [py-spy](https://github.com/benfred/py-spy)).
