@@ -367,6 +367,24 @@ TORCH_COMMAND_DESCRIPTION = CommandDescription(
     option_offset=35,
 )
 
+RELOAD_COMMAND_DESCRIPTION = CommandDescription(
+    usage=[
+        "reload module [class] method",
+    ],
+    summary="reload function implementation based on the latest file content。",
+    examples=[
+        "reload __main__ func_name",
+        "reload __main__ class_name func_name",
+    ],
+    wiki="https://github.com/alibaba/PyFlightProfiler/blob/main/docs/WIKI.md",
+    options=[
+        ("module", "the module that method locates."),
+        ("<class>", "the class name if method belongs to class."),
+        ("method", "target method name."),
+    ],
+    option_offset=35,
+)
+
 VMTOOL_COMMAND_DESCRIPTION = CommandDescription(
     usage=[
         "vmtool -a {forceGc|getInstances} [-c module class] [-e <value>] [-x <value>] [-n <value>] [-v] [-r]"

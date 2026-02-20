@@ -1,3 +1,4 @@
+import importlib
 import inspect
 from types import CodeType, FunctionType, ModuleType
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
@@ -45,8 +46,6 @@ def find_local_method_in_frame(method: CodeType, nested_method: str) -> Tuple[Op
     else:
         return None, 0
 
-
-
 def find_module_function(module: ModuleType, method_name: str) -> Tuple[Optional[FunctionType], bool]:
     """
     return target_method, is_built_in_method
@@ -62,6 +61,29 @@ def find_module_function(module: ModuleType, method_name: str) -> Tuple[Optional
         if type(m) is BUILT_IN_METHOD_TYPE:
             return m, True
     return None, False
+
+
+def find_method_by_mod_cls(module_name: str, cls_name: Optional[str], method_name: str) -> Tuple[
+    Optional[FunctionType], bool, Optional[ModuleType]]:
+    """ Find target method in module or class
+
+    Returns:
+        Tuple[Optional[FunctionType], bool]:
+            1. Method
+            2. is_builtin if specified module method, otherwise class method
+            3. Module
+
+    """
+    module = importlib.import_module(module_name)
+    if cls_name is None:
+        method, is_builtin = find_module_function(module, method_name)
+        return method, is_builtin, module
+    else:
+        cls = getattr(module, cls_name, None)
+        if cls is not None:
+            name, method, is_class_method = find_class_function(cls, method_name)
+            return method, is_class_method, module
+        return None, False, None
 
 
 def add_cls_func_wrapper(

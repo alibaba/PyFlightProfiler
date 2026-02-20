@@ -285,6 +285,87 @@ getglobal __main__ classA static_field
 
 ![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/getglobal.png)
 
+## Method Online Reload: reload
+### Command Description
+The reload command is used when users need to modify method execution logic online and know the file location corresponding to the program execution. This command can be used to modify module/class methods, both synchronous and asynchronous methods.
+
+The reload command format is as follows:
+
+```shell
+reload module [class] method [--verbose]
+```
+
+#### Parameter Analysis
+| Parameter | Required | Meaning | Example |
+| --- | --- | --- | --- |
+| module | Yes | Module where the method is located | __main__, my.pkg.modulename |
+| class | No | Class name where the method is located | className |
+| method | Yes | Method name | methodName |
+| -v, --verbose | No | Whether to display the complete content of the read method | -v |
+
+#### Usage Limitations
+
+By design, the reload command follows the principle of method-level reloading and does not support module-level reloading. Therefore, modifications must be limited to within the method body. The following are usage limitations and precautions:
+
+1. **Module Import Limitations**: Cannot use modules in the reloaded method that are not included in the original method. The following example cannot be reloaded properly:
+```python
+# ---------------- new added ---------------------
+import time
+# ------------------------------------------------
+
+def func():
+    print(2)
+    # ---------------- new added ---------------------
+    # Cannot work properly because use time module not appear in original method
+    # and we do reload on function level only.
+    print(time.time())
+    # ------------------------------------------------
+```
+
+2. **Correct Import Method**: Modules should be imported within the method body, as shown in the following example which can be executed properly:
+```python
+def func():
+    print(2)
+    # ---------------- new added ---------------------
+    # Work properly because `time` module is imported at runtime
+    import time
+    print(time.time())
+    # ------------------------------------------------
+```
+
+3. **Decorator Limitations**: Reload is not supported for builtin_method_or_function and methods implemented with decorators. All modifications should be within the method definition and its interior (decorators should be above the method definition def):
+```python
+from functools import wraps
+def adder(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        #  ---------------- new added ---------------------
+        # modification added here is not supported because decorator changes original function executed only once.
+        print(f"calling decorator")
+        # -------------------------------------------------
+        result = func(*args, **kwargs) + 1
+        return result
+    return wrapper
+
+@adder
+def target_func(x, y):
+    # modification here is supported.
+    return x + y
+```
+
+#### Output Display
+Usage examples:
+
+```shell
+# Reload the func method in the entry module
+reload __main__ func
+
+# Reload the func method under class classA in the entry module
+reload __main__ classA func
+```
+
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/reload.png)
+
 ## PythonVm Tools: vmtool
 ### Viewing Class Instances: getInstances
 Command as follows:

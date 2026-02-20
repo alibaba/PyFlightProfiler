@@ -222,7 +222,7 @@ def completer(text, state):
     words = line_buf.strip().split()
 
     if len(words) <= 1 and (len(line_buf) == 0 or not line_buf[-1].isspace()):
-        options = [name for name in HELP_COMMANDS_NAMES if name.startswith(text)]
+        options = [name + " " for name in HELP_COMMANDS_NAMES if name.startswith(text)]
     else:
         options = []  # only complete first command
 

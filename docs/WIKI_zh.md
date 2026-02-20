@@ -1,3 +1,5 @@
+from jaraco.functools import retry
+
 # 安装准备
 ```shell
 pip3 install flight_profiler
@@ -284,6 +286,88 @@ getglobal __main__ classA static_field
 ```
 
 ![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/getglobal.png)
+
+
+## 方法在线更新reload
+### 命令说明
+reload命令适用于需要在线修改方法执行逻辑的场景，用户需要明确知道目标方法在文件系统中的位置。该命令支持对模块函数和类方法进行重载，同时兼容同步和异步方法。
+
+reload命令格式如下：
+
+```shell
+reload module [class] method [--verbose]
+```
+
+#### 参数解析
+| 参数            | 是否必填 | 含义             | 示例 |
+|---------------| --- |----------------| --- |
+| module        | 是 | 方法所在的模块        | __main__、my.pkg.modulename |
+| class         | 否 | 方法所在的类名        | className |
+| method        | 是 | 方法名称          | methodName |
+| -v, --verbose | 否 | 是否展示所读取方法的完整内容 | -v |
+
+#### 使用限制
+
+在设计上，reload命令遵循方法级别的重载原则，不支持模块级别的重载。因此，修改内容必须限制在方法体内。以下是一些使用限制和注意事项：
+
+1. **模块导入限制**：不能在重载的方法中使用原方法未包含的模块。以下示例无法正常重载：
+```python
+# ---------------- new added ---------------------
+import time
+# ------------------------------------------------
+
+def func():
+    print(2)
+    # ---------------- new added ---------------------
+    # Cannot work properly because use time module not appear in original method
+    # and we do reload on function level only.
+    print(time.time())
+    # ------------------------------------------------
+```
+
+2. **正确导入方式**：应在方法体内导入所需模块，如下示例可以正常执行：
+```python
+def func():
+    print(2)
+    # ---------------- new added ---------------------
+    # Work properly because `time` module is imported at runtime
+    import time
+    print(time.time())
+    # ------------------------------------------------
+```
+
+3. **装饰器限制**：不支持对builtin_method_or_function以及使用装饰器的方法进行重载。所有修改都应在方法定义及其内部进行（装饰器应位于方法定义def之上）：
+```python
+from functools import wraps
+def adder(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        #  ---------------- new added ---------------------
+        # modification added here is not supported because decorator changes original function executed only once.
+        print(f"calling decorator")
+        # -------------------------------------------------
+        result = func(*args, **kwargs) + 1
+        return result
+    return wrapper
+
+@adder
+def target_func(x, y):
+    # modification here is supported.
+    return x + y
+```
+
+#### 输出展示
+使用示例如下：
+
+```shell
+# 重载入口模块的func方法
+reload __main__ func
+
+# 重载入口模块类classA下的func方法
+reload __main__ classA func
+```
+
+![](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/reload.png)
 
 ## PythonVm 工具vmtool
 ### 查看类实例getInstances
