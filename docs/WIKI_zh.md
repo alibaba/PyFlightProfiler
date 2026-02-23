@@ -356,6 +356,17 @@ def target_func(x, y):
     return x + y
 ```
 
+4. **函数入参重定义限制**: 在构建新函数时，会将函数的入参默认值存储至函数的__defaults__ 变量中，因此若有函数入参默认值中含有其他函数调用的情况，则会触发隐式函数调用，参考如下示例。
+
+```python
+def get_default_time():
+    return "2026-02-01"
+
+def my_func(time_str=get_default_time()):
+    # When my_func is modified in place, `get_default_time` function will be called in the new function creation
+    print(time_str)
+```
+
 #### 输出展示
 使用示例如下：
 
