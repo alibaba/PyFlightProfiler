@@ -15,30 +15,38 @@ from flight_profiler.utils.render_util import (
 )
 
 
-def compare_code_objects_equal(co1, co2) -> bool:
-    """ Compare the codeObject1 and codeObject2 are equal after bytecode transform.
+def compare_code_objects_equal(code1: types.CodeType, code2: types.CodeType) -> bool:
     """
-    if co1.co_code != co2.co_code:
+    Compare the codeObject1 and codeObject2 are equal after bytecode transform.
+    """
+    if not isinstance(code1, types.CodeType) or not isinstance(code2, types.CodeType):
+        return code1 == code2
+
+    if code1.co_code != code2.co_code:
         return False
 
-    if co1.co_consts != co2.co_consts:
+    attrs_to_check = [
+        'co_argcount', 'co_posonlyargcount', 'co_kwonlyargcount',
+        'co_nlocals', 'co_stacksize', 'co_flags',
+        'co_names', 'co_varnames', 'co_freevars', 'co_cellvars'
+    ]
+    for attr in attrs_to_check:
+        if getattr(code1, attr, None) != getattr(code2, attr, None):
+            return False
+
+    if len(code1.co_consts) != len(code2.co_consts):
         return False
 
-    if co1.co_names != co2.co_names:
-        return False
-
-    if co1.co_varnames != co2.co_varnames:
-        return False
-
-    if (co1.co_argcount != co2.co_argcount or
-        co1.co_posonlyargcount != co2.co_posonlyargcount or
-        co1.co_kwonlyargcount != co2.co_kwonlyargcount):
-        return False
-
-    if co1.co_cellvars != co2.co_cellvars or co1.co_freevars != co2.co_freevars:
-        return False
+    for c1, c2 in zip(code1.co_consts, code2.co_consts):
+        if isinstance(c1, types.CodeType) and isinstance(c2, types.CodeType):
+            if not compare_code_objects_equal(c1, c2):
+                return False
+        else:
+            if c1 != c2:
+                return False
 
     return True
+
 
 def prepare_colored_method_sign(method_name: str, class_name: Optional[str], module_name: str) -> str:
     if class_name is None:
@@ -50,13 +58,13 @@ def prepare_colored_method_sign(method_name: str, class_name: Optional[str], mod
 class ReloadResult:
 
     def __init__(self, error_reason: Optional[str] = None,
-                method_source: Optional[str] = None,
-                verbose: bool = False,
-                located_file_path: Optional[str] = None,
-                start_line_no: Optional[int] = None):
+                 method_source: Optional[str] = None,
+                 verbose: bool = False,
+                 located_file_path: Optional[str] = None,
+                 start_line_no: Optional[int] = None):
         self.error_reason = error_reason
         self.method_source = method_source
-        self.located_file_path =  located_file_path
+        self.located_file_path = located_file_path
         self.start_line_no = start_line_no
         self.verbose = verbose
 
@@ -117,6 +125,7 @@ def find_innermost_func(func: types.FunctionType, target_name: str):
     # maybe function don't use decorators
     return func
 
+
 class ASTMethodLocator:
 
     @staticmethod
@@ -131,7 +140,8 @@ class ASTMethodLocator:
         return start_line, end_line, has_decorators
 
     @staticmethod
-    def locate_cls_method_in_file(file_path: str, method_name: str, class_name: Optional[str] = None) -> Tuple[Optional[str],
+    def locate_cls_method_in_file(file_path: str, method_name: str, class_name: Optional[str] = None) -> Tuple[
+        Optional[str],
         Optional[str], bool]:
         """
         Returns:
@@ -159,7 +169,8 @@ class ASTMethodLocator:
                 if isinstance(node, ast.ClassDef) and node.name == class_name:
                     target_class_node = node
                     for sub_node in node.body:
-                        if isinstance(sub_node, (ast.FunctionDef, ast.AsyncFunctionDef)) and sub_node.name == method_name:
+                        if isinstance(sub_node,
+                                      (ast.FunctionDef, ast.AsyncFunctionDef)) and sub_node.name == method_name:
                             target_method_node = sub_node
                             break
                     break
@@ -179,7 +190,7 @@ class ASTMethodLocator:
             class_source = "".join(cls_lines)
 
         method_start, method_end, has_method_decorator = ASTMethodLocator.get_node_start_end(target_method_node)
-        method_lines = lines[method_start - 1 : method_end]
+        method_lines = lines[method_start - 1: method_end]
         method_source = "".join(method_lines)
         return class_source, method_source, has_method_decorator
 
@@ -219,8 +230,9 @@ class ReloadAgent:
             result.located_file_path = method_file_path
 
             try:
-                class_source, method_source, has_decorators = ASTMethodLocator.locate_cls_method_in_file(method_file_path, func_name,
-                                                                                     class_name)
+                class_source, method_source, has_decorators = ASTMethodLocator.locate_cls_method_in_file(
+                    method_file_path, func_name,
+                    class_name)
                 if method_source is None:
                     result.error_reason = f"Could not extract method source from file {method_file_path}"
                     return str(result)
@@ -228,6 +240,8 @@ class ReloadAgent:
                 result.error_reason = f"Could not get source code for function {func_name}, error: {e}"
                 return str(result)
             result.method_source = method_source
+            # Use an  empty class wrapper to avoid duplicating class initialization statements
+            wrapped_cls_method_source = f"class {class_name}:\n{method_source}"
 
             # Find Innermost method
             if has_decorators:
@@ -243,7 +257,7 @@ class ReloadAgent:
                 # Compile the new source code
                 if class_name:
                     # For class methods, we need to compile as part of a class
-                    compiled_code = compile(class_source, method_file_path, 'exec')
+                    compiled_code = compile(wrapped_cls_method_source, method_file_path, 'exec')
                 else:
                     # For module functions, compile just the function
                     compiled_code = compile(method_source, method_file_path, 'exec')
@@ -251,17 +265,18 @@ class ReloadAgent:
                 result.error_reason = f"Syntax error in new implementation: {str(e)}"
                 return str(result)
             except Exception as e:
-                result.error_reason =  f"Compilation failed: {str(e)}"
+                result.error_reason = f"Compilation failed: {str(e)}"
                 return str(result)
 
             try:
                 # Execute the compiled code to get the new function object
-                namespace = {}
+                exec_globals = module.__dict__
+                exec_locals = {}
                 if class_name:
                     # For class methods
-                    exec(compiled_code, namespace)
-                    if class_name in namespace:
-                        cls = namespace[class_name]
+                    exec(compiled_code, exec_globals, exec_locals)
+                    if class_name in exec_locals:
+                        cls = exec_locals[class_name]
                         if hasattr(cls, func_name):
                             new_func = getattr(cls, func_name)
                             # Replace the code object
@@ -290,10 +305,9 @@ class ReloadAgent:
                 else:
                     # For module functions
                     # Create a temporary module to execute the code
-                    temp_module = types.ModuleType('temp_reload_module')
-                    exec(compiled_code, temp_module.__dict__)
-                    if func_name in temp_module.__dict__:
-                        new_func = temp_module.__dict__[func_name]
+                    exec(compiled_code, exec_globals, exec_locals)
+                    if func_name in exec_locals:
+                        new_func = exec_locals[func_name]
                         # Replace the code object
                         if compare_code_objects_equal(new_func.__code__, original_code):
                             result.error_reason = f"Method source has not changed"

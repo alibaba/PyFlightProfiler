@@ -353,6 +353,17 @@ def target_func(x, y):
     return x + y
 ```
 
+4. **Function Parameter Redefinition Limitations**: When constructing a new function, the default values of function parameters will be stored in the function's `__defaults__` variable. Therefore, if the default values of function parameters contain calls to other functions, implicit function calls will be triggered. Refer to the following example:
+
+```python
+def get_default_time():
+    return "2026-02-01"
+
+def my_func(time_str=get_default_time()):
+    # When my_func is modified in place, `get_default_time` function will be called in the new function creation
+    print(time_str)
+```
+
 #### Output Display
 Usage examples:
 
