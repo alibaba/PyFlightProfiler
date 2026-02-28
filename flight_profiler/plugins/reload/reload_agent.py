@@ -77,7 +77,6 @@ class ReloadResult:
             lines = self.method_source.splitlines()
             total_lines = len(lines)
 
-            # 2. 如果行数在可接受范围内，直接返回原代码
             if total_lines <= 20:
                 method_source = self.method_source
             else:
