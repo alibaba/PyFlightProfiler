@@ -1,5 +1,3 @@
-from jaraco.functools import retry
-
 # 安装准备
 ```shell
 pip3 install flight_profiler
