@@ -93,6 +93,10 @@ def _execute_bytecode_transform_intern(
     copy_fn = types.FunctionType(
         fn.__code__, global_space, fn.__name__, fn.__defaults__, fn.__closure__
     )
+    copy_fn.__kwdefaults__ = fn.__kwdefaults__
+    copy_fn.__annotations__ = fn.__annotations__
+    copy_fn.__dict__.update(fn.__dict__)
+    copy_fn.__qualname__ = fn.__qualname__
 
     if sys.version_info >= (3, 11):
         # emit COPY_FREE_VARIABLE

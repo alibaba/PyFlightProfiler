@@ -18,6 +18,10 @@ class A:
             return test_func("nested_method")
         return nested_func_inner()
 
+def kwonly_func(x, y, *, c=1):
+    print("kwonly_func called")
+    
+    
 def test_func(name):
     print("hello func")
     return name + " " + "watch_plugin"
@@ -35,5 +39,6 @@ while True:
     A().hello()
     A().nested_method()
     A.cls_method()
+    kwonly_func("kwonly_func_called", 2)
     time.sleep(1)
     idx += 1
