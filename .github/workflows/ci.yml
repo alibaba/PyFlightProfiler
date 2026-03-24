@@ -12,6 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rockylinux:8
+      options: --cap-add=SYS_PTRACE --security-opt seccomp=unconfined
 
     steps:
       - name: Install system dependencies
@@ -26,48 +27,41 @@ jobs:
             git \
             unzip \
             which \
-            findutils \
-            python38 \
-            python38-devel \
-            python38-pip
+            findutils
 
       - name: Check glibc version
         run: |
           ldd --version | head -n1
           # Should show glibc 2.28 (within 2.17-2.32 range)
 
-      - name: Setup Python
+      - name: Install Miniforge
         run: |
-          alternatives --set python3 /usr/bin/python3.8
-          ln -sf /usr/bin/python3.8 /usr/bin/python
-          ln -sf /usr/bin/pip3.8 /usr/bin/pip3
-          ln -sf /usr/bin/pip3.8 /usr/bin/pip
-          python3 --version
+          wget https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Linux-x86_64.sh -O miniforge.sh
+          bash miniforge.sh -b -p $HOME/miniforge
+          echo "$HOME/miniforge/bin" >> $GITHUB_PATH
+
+      - name: Setup Conda environment
+        run: |
+          export PATH="$HOME/miniforge/bin:$PATH"
+          conda create -n test python=3.10 -y
+          conda init bash
+          echo "conda activate test" >> ~/.bashrc
 
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Poetry
+      - name: Install Poetry and dependencies
+        shell: bash -l {0}
         run: |
-          curl -sSL https://install.python-poetry.org | python3 -
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-      - name: Configure Poetry
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
+          source $HOME/miniforge/bin/activate test
+          pip install --upgrade pip
+          pip install poetry pytest
           poetry config virtualenvs.create false
-
-      - name: Install dependencies
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          poetry install --no-interaction
-
-      - name: Install pytest
-        run: |
-          pip3 install pytest
+          poetry install --no-interaction --without dev
 
       - name: Run tests
+        shell: bash -l {0}
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          export PYTHON_HEADER_PATH=/usr/include/python3.8
+          source $HOME/miniforge/bin/activate test
+          export PYTHON_HEADER_PATH=$HOME/miniforge/envs/test/include/python3.10
           make test
