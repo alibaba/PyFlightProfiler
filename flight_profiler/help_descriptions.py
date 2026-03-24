@@ -80,7 +80,7 @@ class CommandDescription:
 
 
 CLS_COMMAND_DESCRIPTION = CommandDescription(
-    usage=["cls [-h] "],
+    usage=["cls [-h|--help]"],
     summary="Clear the screen.",
     examples=["cls"],
     wiki=None,
@@ -88,7 +88,7 @@ CLS_COMMAND_DESCRIPTION = CommandDescription(
 )
 
 GETGLOBAL_COMMAND_DESCRIPTION = CommandDescription(
-    usage=["getglobal module [class] field [-x <value>] [-e <value>] [-r] [-v]"],
+    usage=["getglobal module [class] field [-x|--expand <value>] [-e|--expr <value>] [-r|--raw] [-v|--verbose]"],
     summary="Inspect python module global field or class static field value.",
     examples=["getglobal __main__ global_A", "getglobal __main__ classA static_B -x 3"],
     wiki="https://github.com/alibaba/PyFlightProfiler/blob/main/docs/WIKI.md",
@@ -134,7 +134,7 @@ HELP_COMMAND_DESCRIPTION = CommandDescription(
 )
 
 HISTORY_COMMAND_DESCRIPTION = CommandDescription(
-    usage=["history [-c] [-n <value>]"],
+    usage=["history [-c|--clear] [-n|--limit <value>]"],
     summary="Display command history.",
     examples=["history", "help -c", "history -n 30"],
     wiki=None,
@@ -186,7 +186,7 @@ MODULE_COMMAND_DESCRIPTION = CommandDescription(
 )
 
 PERF_COMMAND_DESCRIPTION = CommandDescription(
-    usage=["perf [pid] [-f <value>] [-r <value>] [-d <value>]"],
+    usage=["perf [pid] [-f|--filepath <value>] [-r|--rate <value>] [-d|--duration <value>]"],
     summary="Dump stack trace information to flamegraph.",
     examples=["perf", "perf -f application.svg"],
     wiki="https://github.com/alibaba/PyFlightProfiler/blob/main/docs/WIKI.md",
@@ -211,7 +211,7 @@ CONSOLE_COMMAND_DESCRIPTION = CommandDescription(
 
 if is_linux():
     STACK_COMMAND_DESCRIPTION = CommandDescription(
-        usage=["stack [pid] [-f <value>] [--native] [-a|--async]"],
+        usage=["stack [pid] [-f|--filepath <value>] [--native] [-a|--async]"],
         summary="Inspect stack frames of current running process.",
         examples=["stack", "stack --native", "stack -a", "stack --async", "stack -f ./stack.log"],
         wiki="https://github.com/alibaba/PyFlightProfiler/blob/main/docs/WIKI.md",
@@ -239,7 +239,7 @@ else:
 
 TRACE_COMMAND_DESCRIPTION = CommandDescription(
     usage=[
-        "trace module [class] method [-i <value>] [-nm <value>] [-et <value>] [-d <value>] [-n <value>] [-f <value>]"
+        "trace module [class] method [-i|--interval <value>] [-nm|--nested-method <value>] [-et|--entrance_time <value>] [-d|--depth <value>] [-n|--limits <value>] [-f|--filter_expr <value>]"
     ],
     summary="Trace the execution time of specified method invocation.",
     examples=[
@@ -282,8 +282,8 @@ TRACE_COMMAND_DESCRIPTION = CommandDescription(
 
 TIME_TUNNEL_COMMAND_DESCRIPTION = CommandDescription(
     usage=[
-        "tt [-t module [class] method] [-n <value>] [-l] [-i <value>] [-d <value>] [-nm <value>] [-da] [-x <value>] [-p] [-f <value>] [-r] [-v]"
-        " [-m <value>]"
+        "tt [-t|--time_tunnel module [class] method] [-n|--limits <value>] [-l|--list] [-i|--index <value>] [-d|--delete <value>] [-nm|--nested-method <value>] [-da|--delete_all] [-x|--expand <value>] [-p|--play] [-f|--filter <value>] [-r|--raw] [-v|--verbose]"
+        " [-m|--method <value>]"
     ],
     summary="Time tunnel, records contexts of method invocation at different times in execution history.",
     examples=[
@@ -336,8 +336,8 @@ TIME_TUNNEL_COMMAND_DESCRIPTION = CommandDescription(
 
 TORCH_COMMAND_DESCRIPTION = CommandDescription(
     usage=[
-        "torch profile module [class] method [-f <value>]",
-        "torch memory [-s] [-r module [class] method] [-nm <value] [-f <value>]",
+        "torch profile module [class] method [-nm|--nested-method <value>] [-f|--filepath <value>]",
+        "torch memory [-s|--snapshot] [-r|--record module [class] method] [-nm|--nested-method <value>] [-f|--filepath <value>]",
     ],
     summary="Profile torch function calling on cpu/cuda and memory analysis, will insert torch.cuda.synchronize() automatically before/after method invocation.",
     examples=[
@@ -373,7 +373,7 @@ TORCH_COMMAND_DESCRIPTION = CommandDescription(
 
 RELOAD_COMMAND_DESCRIPTION = CommandDescription(
     usage=[
-        "reload module [class] method",
+        "reload module [class] method [-v|--verbose]",
     ],
     summary="reload function implementation based on the latest file content。",
     examples=[
@@ -385,13 +385,14 @@ RELOAD_COMMAND_DESCRIPTION = CommandDescription(
         ("module", "the module that method locates."),
         ("<class>", "the class name if method belongs to class."),
         ("method", "target method name."),
+        ("-v, --verbose", "display the newest method source without nested."),
     ],
     option_offset=35,
 )
 
 VMTOOL_COMMAND_DESCRIPTION = CommandDescription(
     usage=[
-        "vmtool -a {forceGc|getInstances} [-c module class] [-e <value>] [-x <value>] [-n <value>] [-v] [-r]"
+        "vmtool -a|--action {forceGc|getInstances} [-c|--class module class] [-e|--expr <value>] [-x|--expand <value>] [-n|--limit <value>] [-v|--verbose] [-r|--raw]"
     ],
     summary="Python VM tool",
     examples=[
@@ -426,7 +427,7 @@ VMTOOL_COMMAND_DESCRIPTION = CommandDescription(
 
 WATCH_COMMAND_DESCRIPTION = CommandDescription(
     usage=[
-        "watch module [class] method [--expr <value>] [-nm <value] [-e] [-r] [-v] [-n <value>] [-x <value>] [-f <value>]"
+        "watch module [class] method [--expr <value>] [-nm|--nested-method <value>] [-e|--exception] [-r|--raw] [-v|--verbose] [-n|--limits <value>] [-x|--expand <value>] [-f|--filter <value>]"
     ],
     summary="Display the input/output args, return object and cost time of method invocation.",
     examples=[

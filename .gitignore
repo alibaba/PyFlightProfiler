@@ -7,3 +7,5 @@ build/
 setup.py
 .vscode/*
 *.iml
+.qoder/*
+.demo/*
