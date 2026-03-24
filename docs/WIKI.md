@@ -100,7 +100,7 @@ Executing the `stack` command will display stack information for all threads in 
 ![img.png](https://raw.githubusercontent.com/alibaba/PyFlightProfiler/refs/heads/main/docs/images/stack_mac.png)
 
 ### Async Coroutine Stack: stack --async
-View all async coroutines/tasks running across all event loops in all threads. 
+View all async coroutines/tasks running across all event loops in all threads.
 
 ```shell
 stack -a
