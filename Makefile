@@ -50,7 +50,7 @@ test: install
 
 install: clean build
 	@echo "poetry install"
-	@pip3 uninstall -y flight_profiler
+	@pip3 uninstall -y flight_profiler || true
 	@pip3 install dist/`ls dist |grep ".whl"`
 	@unzip dist/`ls dist | grep ".whl"` -d dist/
 	@cp dist/flight_profiler/ext/*.so ${BASE_DIR}/flight_profiler/ext
