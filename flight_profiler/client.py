@@ -224,6 +224,31 @@ def read_input_with_box(prompt: str, prompt_gray: str) -> str:
                             sys.stdout.write('\033[C')
                             sys.stdout.flush()
             
+            elif ch == '\t':  # Tab - command completion
+                words = line.strip().split()
+                # Only complete first command when no space after it
+                if len(words) <= 1 and (len(line) == 0 or not line.endswith(' ')):
+                    prefix = words[0] if words else ''
+                    matches = [name for name in HELP_COMMANDS_NAMES if name.startswith(prefix)]
+                    if len(matches) == 1:
+                        # Single match - auto complete
+                        completion = matches[0] + ' '
+                        # Clear current input and show completed text
+                        sys.stdout.write('\b' * cursor_pos)
+                        sys.stdout.write(' ' * len(line))
+                        sys.stdout.write('\b' * len(line))
+                        sys.stdout.write(completion)
+                        sys.stdout.flush()
+                        line = completion
+                        cursor_pos = len(line)
+                    elif len(matches) > 1:
+                        # Multiple matches - show options below
+                        sys.stdout.write('\n')
+                        sys.stdout.write(f"{COLOR_FAINT}  {' '.join(matches)}{COLOR_END}")
+                        sys.stdout.write(f'\033[1A')  # Move up 1 line
+                        sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
+                        sys.stdout.flush()
+            
             elif ch >= ' ' and ch <= '~':  # Printable character
                 line = line[:cursor_pos] + ch + line[cursor_pos:]
                 cursor_pos += 1
