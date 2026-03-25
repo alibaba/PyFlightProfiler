@@ -40,28 +40,33 @@ debug_print() {
     fi
 }
 
+# Error print function that always prints (for critical errors)
+error_print() {
+    echo "$1"
+}
+
 py_bin_path=$(sh $shell_bin_dir/resolve_bin_path.sh $pid)
 
 if [ -z "$py_bin_path" ]; then
-    debug_print "Target process_id $pid not exists!"
+    error_print "Target process_id $pid not exists!"
 	exit 1
 fi
 
 client_py_bin_path=$(sh $shell_bin_dir/resolve_bin_path.sh $client_py_pid)
 
 if [ -z "$client_py_bin_path" ]; then
-    debug_print "client_py_pid $client_py_pid not exists"
+    error_print "client_py_pid $client_py_pid not exists"
     exit 1
 fi
 
 if [ "$py_bin_path" != "$client_py_bin_path" ]; then
-    debug_print "target process does not use same python, profile client use $client_py_bin_path but target process use $py_bin_path"
+    error_print "target process does not use same python, profile client use $client_py_bin_path but target process use $py_bin_path"
     exit 1
 fi
 
 nm_addr_hex=$(sh $shell_bin_dir/resolve_symbol.sh $pid take_gil)
 if [ -z "$nm_addr_hex" ]; then
-	debug_print "invalid python process $pid, test find take_gil function failed"
+	error_print "invalid python process $pid, test find take_gil function failed"
     exit 1
 fi
 nm_addr=$(printf "%d" 0x${nm_addr_hex})

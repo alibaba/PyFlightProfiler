@@ -587,7 +587,7 @@ def get_base_addr(current_directory: str, server_pid: str, platform: str) -> int
     return base_addr
 
 
-def do_inject_on_linux(free_port: int, server_pid: str, debug: bool = False) -> int:
+def do_inject_on_linux(free_port: int, server_pid: str, debug: bool = False, diagnostic_messages: list = None) -> int:
     """
     inject by ptrace under linux env
     returns target port if inject successfully, otherwise exit abnormally
@@ -614,11 +614,14 @@ def do_inject_on_linux(free_port: int, server_pid: str, debug: bool = False) -> 
         text=True,
     )
     exit_code = ps.wait()
+    if exit_code != 0 and not debug and diagnostic_messages:
+        for msg in diagnostic_messages:
+            print(msg)
     verify_exit_code(exit_code, server_pid)
     return free_port
 
 
-def do_inject_on_mac(free_port: int, server_pid: str, debug: bool = False) -> int:
+def do_inject_on_mac(free_port: int, server_pid: str, debug: bool = False, diagnostic_messages: list = None) -> int:
     """
     inject by lldb under mac env
     returns target port if inject successfully, otherwise exit abnormally
@@ -640,25 +643,26 @@ def do_inject_on_mac(free_port: int, server_pid: str, debug: bool = False) -> in
         bufsize=1,
         text=True,
     )
-    if debug:
-        # Only print output in debug mode
-        while True:
-            output = ps.stdout.readline()
-            if output:
-                print(output, end="")
-            else:
-                break
-    ps.wait()
+    stdout_output, stderr_output = ps.communicate()
+    if debug and stdout_output:
+        print(stdout_output, end="")
     with open(tmp_file_path, "r") as temp:
         content = temp.read()
         if content is None or len(content) == 0:
+            # Print diagnostic info on failure (skip if already printed in debug mode)
+            if not debug and diagnostic_messages:
+                for msg in diagnostic_messages:
+                    print(msg)
+            # Print process output on failure (contains error details)
+            if not debug and stdout_output:
+                print(stdout_output, end="" if stdout_output.endswith("\n") else "\n")
             print("PyFlightProfiler attach failed!")
             exit(1)
         return int(content)
 
 
 
-def do_inject_with_sys_remote_exec(free_port: int, server_pid: str, debug: bool = False):
+def do_inject_with_sys_remote_exec(free_port: int, server_pid: str, debug: bool = False, diagnostic_messages: list = None):
     current_directory = os.path.dirname(os.path.abspath(__file__))
     profiler_agent_py: str = os.path.join(current_directory, "profiler_agent.py")
     inject_code_file_path: str = os.path.join(current_directory, f"profiler_agent_{server_pid}_{int(time.time())}.py")
@@ -682,10 +686,18 @@ def do_inject_with_sys_remote_exec(free_port: int, server_pid: str, debug: bool 
     try:
         sys.remote_exec(int(server_pid), inject_code_file_path)
     except PermissionError as e:
+        # Print diagnostic info on failure (skip if already printed in debug mode)
+        if not debug and diagnostic_messages:
+            for msg in diagnostic_messages:
+                print(msg)
         show_error_info(f"\n[ERROR] Higher Permission required! This error id caused by {e}")
         show_normal_info(f"[{COLOR_GREEN}Solution{COLOR_END}{COLOR_WHITE_255}] Try run flight_profiler $pid as {COLOR_RED}root{COLOR_END}{COLOR_WHITE_255}!")
         exit(1)
     except:
+        # Print diagnostic info on failure (skip if already printed in debug mode)
+        if not debug and diagnostic_messages:
+            for msg in diagnostic_messages:
+                print(msg)
         logger.exception(f"Attach via sys.remote_exec failed!")
         exit(1)
     return free_port
@@ -807,12 +819,12 @@ def run():
                 print(f"flight profiler is not enabled on platform: {platform.system()}.")
                 exit(1)
             # sys.remote_exec is provided in CPython 3.14, we can just use it to inject agent code
-            connect_port = do_inject_with_sys_remote_exec(free_port, server_pid, args.debug)
+            connect_port = do_inject_with_sys_remote_exec(free_port, server_pid, args.debug, diagnostic_messages)
         else:
             if is_linux():
-                connect_port = do_inject_on_linux(free_port, server_pid, args.debug)
+                connect_port = do_inject_on_linux(free_port, server_pid, args.debug, diagnostic_messages)
             elif is_mac():
-                connect_port = do_inject_on_mac(free_port, server_pid, args.debug)
+                connect_port = do_inject_on_mac(free_port, server_pid, args.debug, diagnostic_messages)
             else:
                 if not args.debug:
                     for msg in diagnostic_messages:
