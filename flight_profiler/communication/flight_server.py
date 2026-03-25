@@ -71,8 +71,8 @@ class FlightServer(ServerProtocol):
             is_plugin_calling = request_json.get("is_plugin_calling", True)
             param = request_json.get("param", "")
 
-            logger.info(
-                f"[PyFlightProfiler] Cmd: {target} Param: {param} is_plugin_calling: {is_plugin_calling}"
+            logger.debug(
+                f"Cmd: {target} Param: {param} is_plugin_calling: {is_plugin_calling}"
             )
             if is_plugin_calling:
                 if target in self.interactive_commands:
@@ -84,7 +84,7 @@ class FlightServer(ServerProtocol):
             else:
                 await self.special_calling(target, param, writer)
         except:
-            logger.exception(f"[FlightServer] error in execute plugin")
+            logger.exception("error in execute plugin")
         finally:
             if writer is not None and not writer.is_closing():
                 writer.close()

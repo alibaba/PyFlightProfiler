@@ -16,13 +16,12 @@ int init_frida_gum() {
   pthread_mutex_lock(&mutex);
   if (inited != 0) {
     pthread_mutex_unlock(&mutex);
-    fprintf(stderr, "[*] frida gum already inited\n");
     return 0;
   }
   gum_init_embedded();
   inited = 1;
   pthread_mutex_unlock(&mutex);
-  g_print("[*] init frida gum successfully\n");
+  fprintf(stdout, "[PyFlightProfiler] Native profiler initialized.\n");
   return 0;
 }
 
@@ -30,13 +29,12 @@ int deinit_frida_gum() {
   pthread_mutex_lock(&mutex);
   if (inited != 1) {
     // pthread_mutex_unlock(&mutex);
-    fprintf(stderr, "[*] frida gum not inited\n");
     return 0;
   }
   gum_deinit_embedded();
   inited = 0;
   pthread_mutex_unlock(&mutex);
-  g_print("[*] deinit frida gum successfully\n");
+  fprintf(stdout, "[PyFlightProfiler] Native profiler deinitialized.\n");
   return 0;
 }
 

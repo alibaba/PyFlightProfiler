@@ -24,18 +24,18 @@ def load_frida_gum():
         nm_symbol_offset = int("${nm_symbol_offset}")
         flight_profiler_agent_so_path = "${flight_profiler_agent_so_path}"
         lib = ctypes.CDLL(flight_profiler_agent_so_path)
-        lib.inject_init_frida_gum.argtypes = [ctypes.c_ulong]
-        lib.inject_init_frida_gum.restype = ctypes.c_int
-        if lib.inject_init_frida_gum(nm_symbol_offset) != 0:
-            logger.warning(f"[PyFlightProfiler] init frid-gum failed, gilstat is disabled!")
+        lib.init_native_profiler.argtypes = [ctypes.c_ulong]
+        lib.init_native_profiler.restype = ctypes.c_int
+        if lib.init_native_profiler(nm_symbol_offset) != 0:
+            logger.warning("Native profiler init failed, gilstat is disabled!")
     except:
-        logger.exception(f"[PyFlightProfiler] flight_profiler_agent load failed!!!")
+        logger.exception("Native profiler agent load failed!")
 
 if PYTHON_VERSION_314:
     load_frida_gum()
 
 listen_port = int(listen_port)
-logger.info("pyFlightProfiler: will use listen port " + str(listen_port))
+logger.debug(f"Agent listening on port {listen_port}")
 
 
 def run_app():
@@ -46,6 +46,6 @@ def run_app():
     loop.run_until_complete(asyncio.wait(tasks))
 
 
-profile_thread = threading.Thread(target=run_app, name="flight-profiler-injector")
+profile_thread = threading.Thread(target=run_app, name="flight-profiler-agent")
 profile_thread.start()
-logger.info("pyFlightProfiler: start code inject successfully")
+logger.debug("Agent thread started")

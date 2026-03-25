@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import signal
 import socket
 import sys
@@ -30,13 +31,17 @@ from flight_profiler.utils.cli_util import (
 )
 from flight_profiler.utils.env_util import is_linux, is_mac, py_higher_than_314
 from flight_profiler.utils.render_util import (
+    BANNER_COLOR_CYAN,
+    BOX_HORIZONTAL,
+    COLOR_BRIGHT_GREEN,
     COLOR_END,
+    COLOR_FAINT,
     COLOR_GREEN,
     COLOR_ORANGE,
     COLOR_RED,
     COLOR_WHITE_255,
-    build_colorful_banners,
-    build_title_hints,
+    build_prompt_separator,
+    build_welcome_box,
 )
 from flight_profiler.utils.shell_util import execute_shell, get_py_bin_path
 
@@ -46,6 +51,349 @@ try:
     READLINE_AVAILABLE = readline is not None
 except ImportError:
     READLINE_AVAILABLE = False
+
+# Check termios/tty availability for advanced terminal input (Unix only)
+try:
+    import termios
+    import tty
+    TERMIOS_AVAILABLE = True
+except ImportError:
+    TERMIOS_AVAILABLE = False
+
+
+def get_cursor_position() -> int:
+    """
+    Get current cursor row position in terminal (1-based).
+    Returns -1 if unable to detect.
+    """
+    if not TERMIOS_AVAILABLE:
+        return -1
+    try:
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            sys.stdout.write('\033[6n')
+            sys.stdout.flush()
+            response = ''
+            while True:
+                ch = sys.stdin.read(1)
+                response += ch
+                if ch == 'R':
+                    break
+            # Response format: \033[row;colR
+            match = re.search(r'\[(\d+);(\d+)R', response)
+            if match:
+                return int(match.group(1))
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    except Exception:
+        pass
+    return -1
+
+
+def ensure_space_from_bottom(min_lines: int = 3) -> None:
+    """
+    Ensure there's enough space from the bottom of terminal.
+    If cursor is too close to bottom, scroll up by printing newlines.
+    """
+    try:
+        terminal_height = shutil.get_terminal_size().lines
+        cursor_row = get_cursor_position()
+        if cursor_row > 0:
+            lines_from_bottom = terminal_height - cursor_row
+            if lines_from_bottom < min_lines:
+                # Need to scroll up
+                scroll_lines = min_lines - lines_from_bottom
+                print('\n' * scroll_lines, end='')
+                # Move cursor back up
+                sys.stdout.write(f'\033[{scroll_lines}A')
+                sys.stdout.flush()
+    except Exception:
+        pass
+
+
+def read_input_with_box(prompt: str, prompt_gray: str, show_placeholder: bool = False) -> str:
+    """
+    Read single-line input with a box frame (top and bottom separators).
+    The input area appears between two horizontal lines.
+    Enter submits, Ctrl-D exits.
+    After submission, clears the box and changes prompt to gray.
+    
+    Falls back to standard input() if termios is not available.
+    """
+    terminal_width = shutil.get_terminal_size().columns
+    separator = f"{COLOR_FAINT}{BOX_HORIZONTAL * terminal_width}{COLOR_END}"
+    placeholder = "help"
+    
+    # Fallback for systems without termios (e.g., Windows)
+    if not TERMIOS_AVAILABLE:
+        print(separator)
+        result = input(prompt).strip()
+        print(separator)
+        return result
+    
+    # Print the box frame: top line, input line placeholder, bottom line
+    print(separator)                          # Top separator
+    sys.stdout.write(prompt)                  # Prompt
+    # Show placeholder if requested
+    if show_placeholder:
+        sys.stdout.write(f'{COLOR_FAINT}{placeholder}{COLOR_END}')
+    sys.stdout.write('\n')                    # Move to next line
+    print(separator)                          # Bottom separator
+    
+    # Move cursor back up to the input line (2 lines up, then to prompt position)
+    sys.stdout.write('\033[2A')               # Move up 2 lines
+    prompt_len = 2                            # ❯ + space (❯ is 1 width char)
+    sys.stdout.write(f'\033[{prompt_len + 1}G')  # Move to position after prompt
+    sys.stdout.flush()
+    
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    
+    line = ''
+    cursor_pos = 0
+    ctrl_d_pressed = False  # Track if Ctrl-D was pressed once
+    ctrl_c_pressed = False  # Track if Ctrl-C was pressed once
+    placeholder_visible = show_placeholder  # Track if placeholder is currently shown
+    
+    # History navigation
+    history_index = -1  # -1 means current input, 0 is most recent history
+    saved_line = ''  # Save current input when navigating history
+    
+    def get_history_length():
+        """Get the number of history entries."""
+        if READLINE_AVAILABLE:
+            return readline.get_current_history_length()
+        return 0
+    
+    def get_history_item(index):
+        """Get history item by index (1-based in readline)."""
+        if READLINE_AVAILABLE and index > 0:
+            return readline.get_history_item(index)
+        return None
+    
+    def replace_line(new_text):
+        """Replace current line with new text and update display."""
+        nonlocal line, cursor_pos
+        # Clear current line content
+        sys.stdout.write('\r')
+        sys.stdout.write(prompt)
+        sys.stdout.write(' ' * len(line))
+        sys.stdout.write('\r')
+        sys.stdout.write(prompt)
+        # Write new content
+        sys.stdout.write(new_text)
+        sys.stdout.flush()
+        line = new_text
+        cursor_pos = len(line)
+    
+    def cleanup_box_and_show_result(input_text: str):
+        """Clear the box frame and show the command with gray prompt."""
+        # Current cursor is on the input line (line 2)
+        # Line 1: top separator
+        # Line 2: input line (cursor here)
+        # Line 3: bottom separator
+        
+        # Move to start of line
+        sys.stdout.write('\r')
+        # Move up to top separator (line 1)
+        sys.stdout.write('\033[1A')
+        # Clear top separator line
+        sys.stdout.write('\033[2K')
+        # Print gray prompt + input text (replaces top separator)
+        sys.stdout.write(f'{prompt_gray}{input_text}')
+        # Move down to line 2 (old input line)
+        sys.stdout.write('\n\033[2K')  # Clear old input line
+        # Move down to line 3 (bottom separator), command output starts here
+        sys.stdout.write('\n\033[2K')  # Clear bottom separator
+        sys.stdout.flush()
+    
+    try:
+        # Set terminal to cbreak mode but also disable ISIG to capture Ctrl-C as character
+        new_settings = termios.tcgetattr(fd)
+        new_settings[3] = new_settings[3] & ~termios.ECHO & ~termios.ICANON & ~termios.ISIG  # lflags
+        new_settings[6][termios.VMIN] = 1
+        new_settings[6][termios.VTIME] = 0
+        termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
+        
+        while True:
+            ch = sys.stdin.read(1)
+            
+            if ch == '\x04':  # Ctrl-D
+                if not line.strip():
+                    if ctrl_d_pressed:
+                        # Second Ctrl-D - exit silently, clear hint first
+                        sys.stdout.write('\033[1B')  # Move to bottom separator line
+                        sys.stdout.write('\n\033[2K')  # Move down and clear hint line
+                        sys.stdout.write('\n')  # Add extra newline at end
+                        sys.stdout.flush()
+                        raise EOFError()
+                    else:
+                        # First Ctrl-D - show hint below bottom separator
+                        ctrl_d_pressed = True
+                        sys.stdout.write('\033[1B')  # Move down to bottom separator line
+                        sys.stdout.write('\n')  # Move to line below
+                        sys.stdout.write(f'{COLOR_FAINT}Press Ctrl-D again to exit{COLOR_END}')
+                        sys.stdout.write('\033[2A')  # Move back up 2 lines to input line
+                        sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
+                        sys.stdout.flush()
+                else:
+                    # Submit with Ctrl-D if there's content
+                    cleanup_box_and_show_result(line)
+                    return line.strip()
+            
+            elif ch == '\x03':  # Ctrl-C
+                if ctrl_c_pressed:
+                    # Second Ctrl-C - exit silently, clear hint but keep bottom separator
+                    sys.stdout.write('\r\033[2K')  # Clear current line first
+                    sys.stdout.write('\033[1B')  # Move to bottom separator line
+                    sys.stdout.write('\n\033[2K')  # Move down and clear hint line
+                    sys.stdout.write('\n')  # Add extra newline at end
+                    sys.stdout.flush()
+                    raise KeyboardInterrupt
+                else:
+                    # First Ctrl-C - clear input and show hint
+                    ctrl_c_pressed = True
+                    # Clear current line and rewrite prompt (removes any ^C echo)
+                    sys.stdout.write('\r\033[2K')  # Clear current line
+                    sys.stdout.write(prompt)  # Rewrite prompt
+                    line = ''
+                    cursor_pos = 0
+                    # Clear any previous Ctrl-D hint
+                    if ctrl_d_pressed:
+                        ctrl_d_pressed = False
+                    # Show Ctrl-C hint below bottom separator
+                    sys.stdout.write('\033[1B')  # Move down to bottom separator line
+                    sys.stdout.write('\n')  # Move to line below (don't clear separator!)
+                    sys.stdout.write(f'{COLOR_FAINT}Press Ctrl-C again to exit{COLOR_END}')
+                    sys.stdout.write('\033[2A')  # Move back up 2 lines to input line
+                    sys.stdout.write(f'\033[{prompt_len + 1}G')  # Move to position after prompt
+                    sys.stdout.flush()
+            
+            elif ch == '\n' or ch == '\r':  # Enter - submit only if has input
+                if line.strip():
+                    cleanup_box_and_show_result(line)
+                    return line.strip()
+                # Empty input - do nothing, stay in place
+            
+            elif ch == '\x7f' or ch == '\x08':  # Backspace
+                if cursor_pos > 0:
+                    line = line[:cursor_pos-1] + line[cursor_pos:]
+                    cursor_pos -= 1
+                    # Move back, clear to end of line, reprint rest
+                    sys.stdout.write('\b')
+                    rest = line[cursor_pos:]
+                    sys.stdout.write(rest + ' ')
+                    sys.stdout.write('\b' * (len(rest) + 1))
+                    sys.stdout.flush()
+            
+            elif ch == '\033':  # Escape sequence (arrow keys)
+                seq1 = sys.stdin.read(1)
+                if seq1 == '[':
+                    seq2 = sys.stdin.read(1)
+                    if seq2 == 'D':  # Left arrow
+                        if cursor_pos > 0:
+                            cursor_pos -= 1
+                            sys.stdout.write('\033[D')
+                            sys.stdout.flush()
+                    elif seq2 == 'C':  # Right arrow
+                        if cursor_pos < len(line):
+                            cursor_pos += 1
+                            sys.stdout.write('\033[C')
+                            sys.stdout.flush()
+                    elif seq2 == 'A':  # Up arrow - previous history
+                        history_len = get_history_length()
+                        if history_len > 0:
+                            # Clear placeholder if visible
+                            if placeholder_visible:
+                                placeholder_visible = False
+                                sys.stdout.write('\033[2K')
+                                sys.stdout.write('\r')
+                                sys.stdout.write(prompt)
+                                sys.stdout.flush()
+                            # Save current line when first navigating
+                            if history_index == -1:
+                                saved_line = line
+                            # Move to older history
+                            if history_index < history_len - 1:
+                                history_index += 1
+                                hist_item = get_history_item(history_len - history_index)
+                                if hist_item:
+                                    replace_line(hist_item)
+                    elif seq2 == 'B':  # Down arrow - next history
+                        if history_index > -1:
+                            # Clear placeholder if visible
+                            if placeholder_visible:
+                                placeholder_visible = False
+                                sys.stdout.write('\033[2K')
+                                sys.stdout.write('\r')
+                                sys.stdout.write(prompt)
+                                sys.stdout.flush()
+                            history_index -= 1
+                            if history_index == -1:
+                                # Back to current input
+                                replace_line(saved_line)
+                            else:
+                                history_len = get_history_length()
+                                hist_item = get_history_item(history_len - history_index)
+                                if hist_item:
+                                    replace_line(hist_item)
+            
+            elif ch == '\t':  # Tab - command completion
+                words = line.strip().split()
+                # Only complete first command when no space after it
+                if len(words) <= 1 and (len(line) == 0 or not line.endswith(' ')):
+                    prefix = words[0] if words else ''
+                    matches = [name for name in HELP_COMMANDS_NAMES if name.startswith(prefix)]
+                    if len(matches) == 1:
+                        # Single match - auto complete
+                        completion = matches[0] + ' '
+                        # Clear current input and show completed text
+                        sys.stdout.write('\b' * cursor_pos)
+                        sys.stdout.write(' ' * len(line))
+                        sys.stdout.write('\b' * len(line))
+                        sys.stdout.write(completion)
+                        sys.stdout.flush()
+                        line = completion
+                        cursor_pos = len(line)
+                    elif len(matches) > 1:
+                        # Multiple matches - show options below
+                        sys.stdout.write('\n')
+                        sys.stdout.write(f"{COLOR_FAINT}  {' '.join(matches)}{COLOR_END}")
+                        sys.stdout.write(f'\033[1A')  # Move up 1 line
+                        sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
+                        sys.stdout.flush()
+            
+            elif ch >= ' ' and ch <= '~':  # Printable character
+                # Clear placeholder on first input
+                if placeholder_visible:
+                    placeholder_visible = False
+                    # Clear placeholder text
+                    sys.stdout.write('\033[2K')  # Clear current line
+                    sys.stdout.write('\r')
+                    sys.stdout.write(prompt)  # Rewrite prompt
+                    sys.stdout.flush()
+                # Reset Ctrl-D/Ctrl-C state and clear hint if shown
+                if ctrl_d_pressed or ctrl_c_pressed:
+                    ctrl_d_pressed = False
+                    ctrl_c_pressed = False
+                    # Clear the hint below the box
+                    sys.stdout.write('\033[1B')  # Move to bottom separator
+                    sys.stdout.write('\n\033[2K')  # Move down and clear hint line
+                    sys.stdout.write('\033[2A')  # Move back up to input line
+                    sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
+                line = line[:cursor_pos] + ch + line[cursor_pos:]
+                cursor_pos += 1
+                sys.stdout.write(ch)
+                rest = line[cursor_pos:]
+                if rest:
+                    sys.stdout.write(rest)
+                    sys.stdout.write('\b' * len(rest))
+                sys.stdout.flush()
+    
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 class ProfilerCli(object):
 
@@ -61,29 +409,44 @@ class ProfilerCli(object):
         self.history_file = os.path.join(output_dir, "cli_history")
         set_history_file_path(self.history_file)
         self.current_plugin = None
+        self.first_input = True  # Track if this is the first command input
 
     def run(self):
-        build_colorful_banners()
-        build_title_hints([
-            ("pid", str(self.server_pid)),
-            ("py_executable", self.target_executable)
-        ])
+        build_welcome_box(str(self.server_pid), self.target_executable)
 
         while True:
             try:
-                prompt = f"[cmd@{self.server_pid}]$ "
-                cmd = input(prompt).strip()
+                # Ensure there's space from terminal bottom (at least 5 lines for input box)
+                ensure_space_from_bottom(5)
+                
+                # White/bright prompt for active input, gray for history
+                prompt_active = f"{COLOR_WHITE_255}❯{COLOR_END} "
+                prompt_gray = f"{COLOR_FAINT}❯{COLOR_END} "
+                
+                # Read input with box frame (Enter to submit, Ctrl-D to exit)
+                # Show placeholder hint only on first input
+                cmd = read_input_with_box(prompt_active, prompt_gray, show_placeholder=self.first_input)
+                
                 if len(cmd) == 0:
-                    print("", end="")
                     continue
+                
+                # After first successful command, don't show placeholder anymore
+                self.first_input = False
+                    
+                # Add to history if readline is available
+                if READLINE_AVAILABLE:
+                    readline.add_history(cmd)
+                    
                 self.do_action(cmd)
             except EOFError:
                 if READLINE_AVAILABLE:
                     readline.write_history_file(self.history_file)
-                sys.exit("CTRL+D pressed. Exiting Profiler.")
+                sys.exit(0)
             except KeyboardInterrupt:
-                print("")
-                pass
+                # Second Ctrl-C in input - exit silently
+                if READLINE_AVAILABLE:
+                    readline.write_history_file(self.history_file)
+                sys.exit(0)
 
     def check_need_help(self, cmd: str) -> bool:
         return " --help " in cmd or " -h " in cmd or cmd.endswith("-h") or cmd.endswith("--help")
@@ -112,7 +475,7 @@ class ProfilerCli(object):
                 except ModuleNotFoundError as e:
                     print(
                         f"{COLOR_RED} Unsupported command {parts[0]}, use {COLOR_END}{COLOR_ORANGE}help{COLOR_END}{COLOR_RED} "
-                        f"to find available commands!{COLOR_END}"
+                        f"to find available commands!{COLOR_END}\n"
                     )
                     return
                 self.current_plugin = module.get_instance(self.port, self.server_pid)
@@ -129,10 +492,12 @@ class ProfilerCli(object):
                         cmd[cmd.find(parts[0]) + len(parts[0]) :]
                     )
         except KeyboardInterrupt:
+            # Clear ^C from terminal and add newline
+            sys.stdout.write('\r\033[2K\n')
+            sys.stdout.flush()
             if self.current_plugin is not None:
                 try:
                     self.current_plugin.on_interrupted()
-                    print()  # create new line
                 except Exception:
                     show_error_info(traceback.format_exc())
         except Exception:
@@ -290,7 +655,7 @@ def get_base_addr(current_directory: str, server_pid: str, platform: str) -> int
     return base_addr
 
 
-def do_inject_on_linux(free_port: int, server_pid: str, debug: bool = False) -> int:
+def do_inject_on_linux(free_port: int, server_pid: str, debug: bool = False, diagnostic_messages: list = None) -> int:
     """
     inject by ptrace under linux env
     returns target port if inject successfully, otherwise exit abnormally
@@ -298,11 +663,11 @@ def do_inject_on_linux(free_port: int, server_pid: str, debug: bool = False) -> 
     current_directory = os.path.dirname(os.path.abspath(__file__))
     base_addr = get_base_addr(current_directory, server_pid, "linux")
 
-    code_inject_py: str = os.path.join(current_directory, "code_inject.py")
-    with open(os.path.join(current_directory, "lib/inject_params.data"), "w") as f:
-        f.write(f"{code_inject_py.strip()},{free_port},{base_addr}\n")
+    profiler_agent_py: str = os.path.join(current_directory, "profiler_agent.py")
+    with open(os.path.join(current_directory, "lib/attach_params.data"), "w") as f:
+        f.write(f"{profiler_agent_py.strip()},{free_port},{base_addr}\n")
 
-    shell_path = os.path.join(current_directory, "lib/inject")
+    shell_path = os.path.join(current_directory, "lib/attach")
     # Add debug flag to the command if enabled
     cmd_args = [str(shell_path), server_pid]
     if debug:
@@ -317,18 +682,21 @@ def do_inject_on_linux(free_port: int, server_pid: str, debug: bool = False) -> 
         text=True,
     )
     exit_code = ps.wait()
+    if exit_code != 0 and not debug and diagnostic_messages:
+        for msg in diagnostic_messages:
+            print(msg)
     verify_exit_code(exit_code, server_pid)
     return free_port
 
 
-def do_inject_on_mac(free_port: int, server_pid: str, debug: bool = False) -> int:
+def do_inject_on_mac(free_port: int, server_pid: str, debug: bool = False, diagnostic_messages: list = None) -> int:
     """
     inject by lldb under mac env
     returns target port if inject successfully, otherwise exit abnormally
     """
     tmp_fd, tmp_file_path = tempfile.mkstemp()
     current_directory = os.path.dirname(os.path.abspath(__file__))
-    shell_path = os.path.join(current_directory, "shell/code_inject.sh")
+    shell_path = os.path.join(current_directory, "shell/profiler_attach.sh")
 
     # Prepare command arguments
     cmd_args = [str(shell_path), str(os.getpid()), server_pid, tmp_file_path, str(free_port)]
@@ -343,28 +711,29 @@ def do_inject_on_mac(free_port: int, server_pid: str, debug: bool = False) -> in
         bufsize=1,
         text=True,
     )
-    if debug:
-        # Only print output in debug mode
-        while True:
-            output = ps.stdout.readline()
-            if output:
-                print(output, end="")
-            else:
-                break
-    ps.wait()
+    stdout_output, stderr_output = ps.communicate()
+    if debug and stdout_output:
+        print(stdout_output, end="")
     with open(tmp_file_path, "r") as temp:
         content = temp.read()
         if content is None or len(content) == 0:
+            # Print diagnostic info on failure (skip if already printed in debug mode)
+            if not debug and diagnostic_messages:
+                for msg in diagnostic_messages:
+                    print(msg)
+            # Print process output on failure (contains error details)
+            if not debug and stdout_output:
+                print(stdout_output, end="" if stdout_output.endswith("\n") else "\n")
             print("PyFlightProfiler attach failed!")
             exit(1)
         return int(content)
 
 
 
-def do_inject_with_sys_remote_exec(free_port: int, server_pid: str, debug: bool = False):
+def do_inject_with_sys_remote_exec(free_port: int, server_pid: str, debug: bool = False, diagnostic_messages: list = None):
     current_directory = os.path.dirname(os.path.abspath(__file__))
-    code_inject_py: str = os.path.join(current_directory, "code_inject.py")
-    inject_code_file_path: str = os.path.join(current_directory, f"code_inject_{server_pid}_{int(time.time())}.py")
+    profiler_agent_py: str = os.path.join(current_directory, "profiler_agent.py")
+    inject_code_file_path: str = os.path.join(current_directory, f"profiler_agent_{server_pid}_{int(time.time())}.py")
     shared_lib_suffix = "so" if is_linux() else "dylib"
     inject_agent_so_path: str = os.path.join(current_directory, "lib", f"flight_profiler_agent.{shared_lib_suffix}")
 
@@ -373,7 +742,7 @@ def do_inject_with_sys_remote_exec(free_port: int, server_pid: str, debug: bool 
     else:
         nm_symbol_offset = get_base_addr(current_directory, server_pid, "mac")
 
-    with open(code_inject_py, 'r', encoding='utf-8') as f:
+    with open(profiler_agent_py, 'r', encoding='utf-8') as f:
         content = f.read()
     modified_content = content.replace("${listen_port}", str(free_port))
     modified_content = modified_content.replace("${current_file_abspath}", inject_code_file_path)
@@ -385,21 +754,34 @@ def do_inject_with_sys_remote_exec(free_port: int, server_pid: str, debug: bool 
     try:
         sys.remote_exec(int(server_pid), inject_code_file_path)
     except PermissionError as e:
+        # Print diagnostic info on failure (skip if already printed in debug mode)
+        if not debug and diagnostic_messages:
+            for msg in diagnostic_messages:
+                print(msg)
         show_error_info(f"\n[ERROR] Higher Permission required! This error id caused by {e}")
         show_normal_info(f"[{COLOR_GREEN}Solution{COLOR_END}{COLOR_WHITE_255}] Try run flight_profiler $pid as {COLOR_RED}root{COLOR_END}{COLOR_WHITE_255}!")
         exit(1)
     except:
+        # Print diagnostic info on failure (skip if already printed in debug mode)
+        if not debug and diagnostic_messages:
+            for msg in diagnostic_messages:
+                print(msg)
         logger.exception(f"Attach via sys.remote_exec failed!")
         exit(1)
     return free_port
 
 
-def show_pre_attach_info(server_pid: str, debug: bool = False):
+def show_pre_attach_info(server_pid: str, debug: bool = False) -> list:
+    """
+    Collect pre-attach diagnostic information.
+    Returns a list of info messages to be printed only on failure.
+    """
     from flight_profiler.utils.env_util import (
         get_current_process_uids,
         get_process_uids,
     )
 
+    messages = []
     current_directory = os.path.dirname(os.path.abspath(__file__))
     server_executable: str = get_py_bin_path(server_pid)
     client_executable: str = get_py_bin_path(os.getpid())
@@ -409,31 +791,31 @@ def show_pre_attach_info(server_pid: str, debug: bool = False):
     server_uids = get_process_uids(server_pid)
     client_uids = get_current_process_uids()
 
-    # Print executable information
-    print(f"PyFlightProfiler version: {version('flight_profiler')}")
-    print(f"[INFO] Platform system: {platform.system()}. Architecture: {platform.machine()}")
-    print(f"[INFO] Installation directory: {current_directory}.")
+    # Collect diagnostic information
+    messages.append(f"PyFlightProfiler version: {version('flight_profiler')}")
+    messages.append(f"[INFO] Platform system: {platform.system()}. Architecture: {platform.machine()}")
+    messages.append(f"[INFO] Installation directory: {current_directory}.")
     if debug:
-        print(f"[DEBUG] Server Python Executable: {server_executable}")
-        print(f"[DEBUG] Client Python Executable: {client_executable}")
-    print(f"[INFO] Verify pyFlightProfiler and target are using the same python executable: {'🌟' if same else '❌'}")
+        messages.append(f"[DEBUG] Server Python Executable: {server_executable}")
+        messages.append(f"[DEBUG] Client Python Executable: {client_executable}")
+    messages.append(f"[INFO] Verify pyFlightProfiler and target are using the same python executable: {'🌟' if same else '❌'}")
 
     # Check directory write permissions
     directory_write_permission = check_directory_write_permission(current_directory)
     permission_status = "🌟" if directory_write_permission else "❌"
-    print(f"[INFO] Verify pyFlightProfiler has write permission to installation directory: {permission_status}")
+    messages.append(f"[INFO] Verify pyFlightProfiler has write permission to installation directory: {permission_status}")
     if not directory_write_permission:
-        print(f"[WARN] PyFlightProfiler needs write permission to {current_directory} to function properly. "
+        messages.append(f"[WARN] PyFlightProfiler needs write permission to {current_directory} to function properly. "
               f"Please try run {COLOR_RED}flight_profiler with appropriate permissions{COLOR_END}.")
 
-    # Print permission information
+    # Collect permission information
     if server_uids and client_uids:
         server_real_uid, server_effective_uid, server_saved_uid, server_filesystem_uid = server_uids
         client_real_uid, client_effective_uid, client_saved_uid, client_filesystem_uid = client_uids
 
         if debug:
-            print(f"[INFO] Server Process - Real UID: {server_real_uid}, Effective UID: {server_effective_uid}")
-            print(f"[INFO] Client Process - Real UID: {client_real_uid}, Effective UID: {client_effective_uid}")
+            messages.append(f"[INFO] Server Process - Real UID: {server_real_uid}, Effective UID: {server_effective_uid}")
+            messages.append(f"[INFO] Client Process - Real UID: {client_real_uid}, Effective UID: {client_effective_uid}")
 
         # Check if client has sufficient privileges
         has_sufficient_privileges = (
@@ -443,15 +825,17 @@ def show_pre_attach_info(server_pid: str, debug: bool = False):
         )
 
         privilege_status = "🌟" if has_sufficient_privileges else "❌"
-        print(f"[INFO] Verify pyFlightProfiler has user permission to attach target: {privilege_status}")
+        messages.append(f"[INFO] Verify pyFlightProfiler has user permission to attach target: {privilege_status}")
 
         # Additional check for root privileges
         if server_real_uid == 0 and client_effective_uid != 0:
-            print(f"[WARN] Target process is running as root, elevated privileges may be required.")
+            messages.append(f"[WARN] Target process is running as root, elevated privileges may be required.")
         elif client_effective_uid != 0 and server_real_uid != client_real_uid:
-            print(f"[WARN] Target process is owned by a different user, permission issues may occur.")
+            messages.append(f"[WARN] Target process is owned by a different user, permission issues may occur.")
     else:
-        print(f"[INFO] Permission information not available on this platform.")
+        messages.append(f"[INFO] Permission information not available on this platform.")
+
+    return messages
 
 def run():
     parser = argparse.ArgumentParser(
@@ -473,7 +857,13 @@ def run():
     inject_start_port = int(os.getenv("PYFLIGHT_INJECT_START_PORT", 16000))
     inject_end_port = int(os.getenv("PYFLIGHT_INJECT_END_PORT", 16500))
     inject_timeout = int(os.getenv("PYFLIGHT_INJECT_TIMEOUT", 5))
-    show_pre_attach_info(server_pid, args.debug)
+
+    # Collect diagnostic info (print immediately if debug mode, otherwise only on failure)
+    diagnostic_messages = show_pre_attach_info(server_pid, args.debug)
+    if args.debug:
+        for msg in diagnostic_messages:
+            print(msg)
+        print()  # Empty line before welcome box
 
     connect_port: int = check_server_injected(
         server_pid, inject_start_port, inject_end_port, inject_timeout
@@ -481,27 +871,34 @@ def run():
     if connect_port < 0:
         free_port: int = find_port_available(inject_start_port, inject_end_port)
         if free_port < 0:
+            # Print diagnostic info on failure (skip if already printed in debug mode)
+            if not args.debug:
+                for msg in diagnostic_messages:
+                    print(msg)
             print(
                 f"No available debug port between range: {inject_start_port} {inject_end_port}"
             )
+            exit(1)
         if sys.version_info >= (3, 14):
             if not is_linux() and not is_mac():
+                if not args.debug:
+                    for msg in diagnostic_messages:
+                        print(msg)
                 print(f"flight profiler is not enabled on platform: {platform.system()}.")
                 exit(1)
             # sys.remote_exec is provided in CPython 3.14, we can just use it to inject agent code
-            connect_port = do_inject_with_sys_remote_exec(free_port, server_pid, args.debug)
+            connect_port = do_inject_with_sys_remote_exec(free_port, server_pid, args.debug, diagnostic_messages)
         else:
             if is_linux():
-                connect_port = do_inject_on_linux(free_port, server_pid, args.debug)
+                connect_port = do_inject_on_linux(free_port, server_pid, args.debug, diagnostic_messages)
             elif is_mac():
-                connect_port = do_inject_on_mac(free_port, server_pid, args.debug)
+                connect_port = do_inject_on_mac(free_port, server_pid, args.debug, diagnostic_messages)
             else:
+                if not args.debug:
+                    for msg in diagnostic_messages:
+                        print(msg)
                 print(f"flight profiler is not enabled on platform: {platform.system()}.")
                 exit(1)
-    else:
-        print(
-            f"[INFO] Process {server_pid} was attached through port {connect_port} already, so keep reusing the same port."
-        )
 
     # add tab complete
     if READLINE_AVAILABLE:
@@ -509,9 +906,11 @@ def run():
         readline.parse_and_bind("tab: complete")
     cli = ProfilerCli(port=connect_port, target_executable=get_py_bin_path(server_pid))
     check_preload = cli.check_status(timeout=5)
-    if check_preload:
-        print(f"\nPyFlightProfiler: 🌟 attach target process {server_pid} successfully!")
-    else:
+    if not check_preload:
+        # Print diagnostic info on failure (skip if already printed in debug mode)
+        if not args.debug:
+            for msg in diagnostic_messages:
+                print(msg)
         # here the injection routine is done successfully, but server has no chance to respond
         verify_exit_code(16, server_pid)
 

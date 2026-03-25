@@ -105,7 +105,7 @@ class HelpAgent:
             # Use ljust_display to handle emoji width correctly
             icon_part = ljust_display(cmd_icon, 2)
             name_part = ljust_display(cmd_name, 12)
-            display_msg += f"{COLOR_FAINT}{icon_part}{COLOR_END} {COLOR_BRIGHT_GREEN}{name_part}{COLOR_END}{align_prefix(15, HELP_COMMANDS_DESCRIPTIONS[c_idx].summary)}\n"
+            display_msg += f"{icon_part} {COLOR_BRIGHT_GREEN}{name_part}{COLOR_END}{align_prefix(15, HELP_COMMANDS_DESCRIPTIONS[c_idx].summary)}\n"
         return display_msg
 
     def get_command_description(self, command_name: str) -> str:

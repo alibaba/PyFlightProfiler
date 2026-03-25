@@ -1,4 +1,4 @@
-#include "code_inject.h"
+#include "profiler_attach.h"
 #include "Python.h"
 #include "frida_profiler.h"
 #include "py_gil_intercept.h"
@@ -11,7 +11,7 @@
 #include <string.h>
 static char filename[FILENAME_MAX] = "";
 static char take_gil_literal[9] = "take_gil";
-static int py_injected = 0;
+static int py_attached = 0;
 static int port;
 static pthread_mutex_t mutex;
 
@@ -99,7 +99,7 @@ static void boot_entry(void *boot_raw) {
   if (tstate == NULL) {
     PyMem_DEL(boot_raw);
     fprintf(stderr,
-            "pyFlightProfiler: Not enough memory to create thread state.\n");
+            "[PyFlightProfiler] Not enough memory to create thread state.\n");
     return;
   }
 
@@ -107,14 +107,14 @@ static void boot_entry(void *boot_raw) {
   // here take gil lock, and set current PyThreadState
   PyEval_AcquireThread(tstate);
 
-  fprintf(stdout, "pyFlightProfiler: CodeInject Executing %s.\n", filename);
+  fprintf(stdout, "[PyFlightProfiler] Loading agent: %s\n", filename);
   PyObject *res = exec_python_entrance();
   if (res == NULL) {
     if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
       /* SystemExit is ignored silently */
       PyErr_Clear();
     } else {
-      fprintf(stderr, "pyFlightProfiler: Unhandled exception in thread.\n");
+      fprintf(stderr, "[PyFlightProfiler] Unhandled exception in thread.\n");
       PyErr_PrintEx(0);
       // clear state, we don't want to crash the other process
       PyErr_Clear();
@@ -123,7 +123,7 @@ static void boot_entry(void *boot_raw) {
     Py_DECREF(res);
   }
 
-  fprintf(stdout, "pyFlightProfiler: Thread finished execution.\n");
+  fprintf(stdout, "[PyFlightProfiler] Agent initialization complete.\n");
   PyMem_RawFree(boot_raw);
 
   // clear tstat data
@@ -142,7 +142,7 @@ static int start_thread() {
   // PyMem_NEW or PyMem_Malloc not work in python 3.12
   boot = (struct bootstate *)PyMem_RawMalloc(sizeof(struct bootstate));
   if (boot == NULL) {
-    fprintf(stderr, "pyFlightProfiler: alloc memory for bootstate failed\n");
+    fprintf(stderr, "[PyFlightProfiler] alloc memory for bootstate failed\n");
     return 1;
   }
 
@@ -154,7 +154,7 @@ static int start_thread() {
   PyGILState_STATE old_gil_state = PyGILState_Ensure();
 
   boot->interp = PyThreadState_Get()->interp;
-  // start a background thread to inject code, gdb will quit quickly
+  // start a background thread to attach code, debugger will quit quickly
   ident = PyThread_start_new_thread(boot_entry, (void *)boot);
 
   int ret = 0;
@@ -174,12 +174,12 @@ static int start_thread() {
 extern "C" {
 #endif
 
-int inject(char *fn, int p, unsigned long nm_symbol_offset) {
+int profiler_attach(char *fn, int p, unsigned long nm_symbol_offset) {
   int ret_port = p;
   int ret;
   pthread_mutex_lock(&mutex);
-  if (py_injected != 0) {
-    fprintf(stderr, "code already injected");
+  if (py_attached != 0) {
+    fprintf(stderr, "profiler already attached");
     ret_port = port;
   } else {
     strcpy(filename, fn);
@@ -189,7 +189,7 @@ int inject(char *fn, int p, unsigned long nm_symbol_offset) {
       pthread_mutex_unlock(&mutex);
       return -1;
     }
-    py_injected = 1;
+    py_attached = 1;
   }
   pthread_mutex_unlock(&mutex);
   // init offset from proc addr to addr get from system nm command
@@ -202,7 +202,7 @@ int inject(char *fn, int p, unsigned long nm_symbol_offset) {
   return ret_port;
 }
 
-int inject_init_frida_gum(unsigned long nm_symbol_offset) {
+int init_native_profiler(unsigned long nm_symbol_offset) {
   // used for CPython >= 3.14
   // init offset from proc addr to addr get from system nm command
   set_nm_symbol_offset(nm_symbol_offset);
@@ -236,7 +236,7 @@ const void *get_so_path() {
   return dl_info.dli_fname;
 }
 
-void inject_inner() {
+void do_attach() {
   pthread_mutex_init(&mutex, NULL);
 
   const char *so_path = (const char *)get_so_path();
@@ -251,7 +251,7 @@ void inject_inner() {
 
   get_parent_directory(so_path_modify);
   char params_path[PATH_MAX]; // Make sure the buffer is large enough
-  snprintf(params_path, sizeof(params_path), "%s/inject_params.data",
+  snprintf(params_path, sizeof(params_path), "%s/attach_params.data",
            so_path_modify);
 
   FILE *file;
@@ -262,7 +262,7 @@ void inject_inner() {
 
   file = fopen(params_path, "r");
   if (file == NULL) {
-    perror("Unable to open input_prams.data");
+    perror("Unable to open attach_params.data");
     return;
   }
   if (fgets(line, sizeof(line), file) != NULL) {
@@ -285,11 +285,11 @@ void inject_inner() {
       base_addr = strtoul(token, NULL, 10);
     }
   } else {
-    fprintf(stderr, "Error reading input_params.data!\n");
+    fprintf(stderr, "Error reading attach_params.data!\n");
     return;
   }
   fclose(file);
-  inject(py_code, port, base_addr);
+  profiler_attach(py_code, port, base_addr);
 }
 
 #ifdef __cplusplus
@@ -297,10 +297,10 @@ void inject_inner() {
 #endif
 
 /*
- * This function is automatically called when the library is injected
+ * This function is automatically called when the library is loaded
  * into a process.
  */
-__attribute__((constructor)) void code_inject_init() {
+__attribute__((constructor)) void profiler_attach_init() {
 #if !defined(__APPLE__)
   if (Py_IsInitialized()) {
     if (Py_GetVersion() != NULL) {
@@ -308,13 +308,13 @@ __attribute__((constructor)) void code_inject_init() {
       int major, minor;
       if (sscanf(version, "%d.%d", &major, &minor) == 2) {
         if (major == 3 && minor < 14) {
-          inject_inner();
+          do_attach();
         }
       }
     }
   } else {
 #if PY_MAJOR_VERSION == 3 && PY_MINOR_VERSION < 14
-    inject_inner();
+    do_attach();
 #endif
   }
 #endif

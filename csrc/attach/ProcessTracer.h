@@ -112,15 +112,15 @@ public:
 
   // Failure recovery
   /**
-   * @brief Restore the process state after a failed injection attempt
-   * @param injection_address Address where the shellcode was injected
-   * @param backup_data Pointer to the original data at the injection address
+   * @brief Restore the process state after a failed attach attempt
+   * @param attach_address Address where the shellcode was loaded
+   * @param backup_data Pointer to the original data at the attach address
    * @param data_length Length of the backup data
    * @param registers Pointer to the original register state
    * @return true if restoration was successful, false otherwise
    */
-  bool recoverInjection(long injection_address, const void *backup_data,
-                        size_t data_length, REG_TYPE *registers);
+  bool recoverAttach(long attach_address, const void *backup_data,
+                     size_t data_length, REG_TYPE *registers);
 
   // Accessor for debug mode
   /**

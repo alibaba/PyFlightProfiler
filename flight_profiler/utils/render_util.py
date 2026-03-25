@@ -39,6 +39,47 @@ BANNER_COLOR_LIST = [
     BANNER_COLOR_PURPLE
 ]
 
+
+def make_clickable_link(url: str, text: str = None) -> str:
+    """
+    Create a clickable hyperlink for terminal using OSC 8 escape sequence.
+    Works in modern terminals like iTerm2, GNOME Terminal, Windows Terminal, etc.
+    Falls back to plain URL for unsupported terminals (e.g., Mac Terminal.app).
+    
+    Args:
+        url: The URL to link to
+        text: Display text (defaults to URL if not provided)
+    
+    Returns:
+        Terminal escape sequence for clickable link, or plain URL if unsupported
+    """
+    if text is None:
+        text = url
+    
+    # Check if terminal supports OSC 8 hyperlinks
+    term_program = os.environ.get('TERM_PROGRAM', '')
+    term = os.environ.get('TERM', '')
+    
+    # Known terminals that support OSC 8
+    supported_terminals = ['iTerm.app', 'vscode', 'WezTerm', 'Hyper']
+    supported_terms = ['xterm-256color', 'screen-256color']
+    
+    # Check for iTerm2, VSCode, or other known supporting terminals
+    is_supported = (
+        term_program in supported_terminals or
+        'ITERM_SESSION_ID' in os.environ or  # iTerm2
+        'WT_SESSION' in os.environ or  # Windows Terminal
+        'KONSOLE_VERSION' in os.environ or  # Konsole
+        'GNOME_TERMINAL_SCREEN' in os.environ  # GNOME Terminal
+    )
+    
+    if is_supported:
+        # OSC 8 format: \033]8;;URL\007TEXT\033]8;;\007
+        return f"\033]8;;{url}\007{text}\033]8;;\007"
+    else:
+        # Plain URL for unsupported terminals (most terminals auto-detect URLs)
+        return text
+
 import unicodedata
 
 """ Status Icons
@@ -86,6 +127,11 @@ BOX_T_LEFT = "┤"
 BOX_CROSS = "┼"
 BOX_DOUBLE_HORIZONTAL = "═"
 BOX_LIGHT_HORIZONTAL = "╌"
+# Rounded corners
+BOX_ROUND_TOP_LEFT = "╭"
+BOX_ROUND_TOP_RIGHT = "╮"
+BOX_ROUND_BOTTOM_LEFT = "╰"
+BOX_ROUND_BOTTOM_RIGHT = "╯"
 
 
 ENTRANCE_HINTS = [
@@ -335,6 +381,110 @@ def build_title_hints(additional_hints: List[Tuple[str, str]] = None) -> None:
         needed_space_cnt = max_key_le - len(hint[0])
         print(f"{COLOR_WHITE_255}{hint[0]}:{' ' * needed_space_cnt} {hint[1]}{COLOR_END}")
     print()
+
+
+def build_welcome_box(pid: str, py_executable: str) -> None:
+    """
+    Build and display a Claude Code style welcome box.
+
+    Args:
+        pid: Target process ID
+        py_executable: Path to Python executable
+    """
+    ver = version("flight_profiler")
+    terminal_width = shutil.get_terminal_size().columns
+    box_width = min(80, terminal_width - 2)
+
+    # Read banner
+    file_path = os.path.abspath(__file__)
+    dir_path = os.path.dirname(os.path.dirname(file_path))
+    with open(os.path.join(dir_path, "banner.desc"), "r") as f:
+        banner_lines = f.read().splitlines()
+
+    # Border color - use faint/gray for a subtle look
+    border_color = COLOR_FAINT
+
+    # Build the box - title with white highlight and gray version number
+    title = "PyFlightProfiler"
+    version_str = f"v{ver}"
+    # Title: white bold (need COLOR_END first to clear FAINT attribute), version: gray
+    title_part = f"{COLOR_END}{COLOR_WHITE_255}{COLOR_BOLD}{title}{COLOR_END}"
+    version_part = f"{border_color}{version_str}"
+    title_display_len = len(f" {title} {version_str} ")
+    left_padding = 3
+    right_padding = box_width - 2 - left_padding - title_display_len
+    top_line = f"{border_color}{BOX_ROUND_TOP_LEFT}{BOX_HORIZONTAL * left_padding} {title_part} {version_part} {BOX_HORIZONTAL * right_padding}{BOX_ROUND_TOP_RIGHT}{COLOR_END}"
+
+    print()  # Empty line before welcome box
+    print(top_line)
+
+    # Helper function to print a boxed line
+    def print_box_line(content: str, content_display_len: int):
+        padding = box_width - 2 - content_display_len
+        print(f"{border_color}{BOX_VERTICAL}{COLOR_END}{content}{' ' * max(0, padding)}{border_color}{BOX_VERTICAL}{COLOR_END}")
+
+    # Empty line
+    print_box_line("", 0)
+
+    # Banner lines with colors
+    space_indices = [0]
+    if banner_lines:
+        for idx in range(1, len(banner_lines[0])):
+            all_space = True
+            for j in range(len(banner_lines)):
+                if idx < len(banner_lines[j]) and banner_lines[j][idx] != " ":
+                    all_space = False
+                    break
+            if all_space:
+                space_indices.append(idx)
+
+    for line in banner_lines:
+        rendered_line = "  "
+        for idx in range(len(space_indices)):
+            if space_indices[idx] >= len(line):
+                continue
+            if idx < len(space_indices) - 1:
+                rendered_line += f"{BANNER_COLOR_LIST[idx]}{COLOR_BOLD}{line[space_indices[idx]:space_indices[idx + 1]]}{COLOR_END}"
+            else:
+                rendered_line += f"{BANNER_COLOR_LIST[idx]}{COLOR_BOLD}{line[space_indices[idx]:]}{COLOR_END}"
+        display_len = str_display_width(line) + 2
+        print_box_line(rendered_line, display_len)
+
+    # Empty line
+    print_box_line("", 0)
+
+    # Info section - each item on separate line
+    wiki_url = "https://github.com/alibaba/PyFlightProfiler/wiki"
+    clickable_wiki = make_clickable_link(wiki_url)
+    info_items = [
+        ("pid", pid),
+        ("wiki", clickable_wiki),
+        ("python", py_executable),
+    ]
+
+    for key, value in info_items:
+        line = f"  {COLOR_FAINT}{key}:{COLOR_END} {COLOR_WHITE_255}{value}{COLOR_END}"
+        display_len = len(f"  {key}: {value}")
+        print_box_line(line, display_len)
+
+    # Empty line
+    print_box_line("", 0)
+
+    # Bottom line
+    bottom_line = f"{border_color}{BOX_ROUND_BOTTOM_LEFT}{BOX_HORIZONTAL * (box_width - 2)}{BOX_ROUND_BOTTOM_RIGHT}{COLOR_END}"
+    print(bottom_line)
+    print()
+
+
+def build_prompt_separator() -> str:
+    """
+    Build a full-width separator line for the command prompt.
+
+    Returns:
+        str: A separator line that spans terminal width
+    """
+    terminal_width = shutil.get_terminal_size().columns
+    return f"{COLOR_FAINT}{BOX_HORIZONTAL * terminal_width}{COLOR_END}"
 
 
 def render_expression_result(result: ExpressionResult) -> str:

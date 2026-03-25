@@ -340,11 +340,11 @@ void PyGilStat::boot_entry(void *boot_raw) {
   if (tstate == NULL) {
     PyMem_DEL(boot_raw);
     fprintf(stderr,
-            "pyFlightProfiler: Not enough memory to create thread state.\n");
+            "[PyFlightProfiler] Not enough memory to create thread state.\n");
     return;
   }
 
-  fprintf(stdout, "pyFlightProfiler: Gil Stat Thread start Executing.\n");
+  fprintf(stdout, "[PyFlightProfiler] Gil Stat Thread start Executing.\n");
 
   int stat_interval = stat->config->stat_interval * 1000;
   int sleep_interval = 500;
@@ -382,7 +382,7 @@ void PyGilStat::boot_entry(void *boot_raw) {
     select(0, (fd_set *)0, (fd_set *)0, (fd_set *)0, &t);
   }
 
-  fprintf(stdout, "pyFlightProfiler: Gil Stat Thread finished execution.\n");
+  fprintf(stdout, "[PyFlightProfiler] Gil Stat Thread finished execution.\n");
 
   PyMem_RawFree(boot_raw);
 
@@ -406,7 +406,7 @@ void PyGilStat::start_python_stat_thread() {
   boot = (struct bootstate *)PyMem_RawMalloc(sizeof(struct bootstate));
   if (boot == NULL) {
     fprintf(stderr,
-            "pyFlightProfiler: alloc memory for gil stat bootstate failed\n");
+            "[PyFlightProfiler] alloc memory for gil stat bootstate failed\n");
     PyErr_PrintEx(0);
     return;
   }

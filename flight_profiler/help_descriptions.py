@@ -20,6 +20,7 @@ from flight_profiler.utils.render_util import (
     COLOR_WHITE_255,
     ICON_ARROW,
     align_prefix,
+    make_clickable_link,
 )
 
 
@@ -70,9 +71,10 @@ class CommandDescription:
 
         wiki_description = ""
         if self._wiki is not None:
+            clickable_wiki = make_clickable_link(self._wiki)
             wiki_description = (
                 f"{section_prefix} WIKI{section_suffix}\n"
-                f"  {COLOR_WHITE_255}{self._wiki}{COLOR_END}\n\n"
+                f"  {COLOR_WHITE_255}{clickable_wiki}{COLOR_END}\n\n"
             )
         return (
             f"{section_prefix} USAGE{section_suffix}\n"
