@@ -154,6 +154,7 @@ def read_input_with_box(prompt: str, prompt_gray: str, show_placeholder: bool = 
     line = ''
     cursor_pos = 0
     ctrl_d_pressed = False  # Track if Ctrl-D was pressed once
+    ctrl_c_pressed = False  # Track if Ctrl-C was pressed once
     placeholder_visible = show_placeholder  # Track if placeholder is currently shown
     
     def cleanup_box_and_show_result(input_text: str):
@@ -178,7 +179,12 @@ def read_input_with_box(prompt: str, prompt_gray: str, show_placeholder: bool = 
         sys.stdout.flush()
     
     try:
-        tty.setcbreak(fd)
+        # Set terminal to cbreak mode but also disable ISIG to capture Ctrl-C as character
+        new_settings = termios.tcgetattr(fd)
+        new_settings[3] = new_settings[3] & ~termios.ECHO & ~termios.ICANON & ~termios.ISIG  # lflags
+        new_settings[6][termios.VMIN] = 1
+        new_settings[6][termios.VTIME] = 0
+        termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
         
         while True:
             ch = sys.stdin.read(1)
@@ -207,9 +213,32 @@ def read_input_with_box(prompt: str, prompt_gray: str, show_placeholder: bool = 
                     return line.strip()
             
             elif ch == '\x03':  # Ctrl-C
-                sys.stdout.write('\033[1B\n')  # Move down past the box
-                sys.stdout.flush()
-                raise KeyboardInterrupt
+                if ctrl_c_pressed:
+                    # Second Ctrl-C - exit silently, clear hint but keep bottom separator
+                    sys.stdout.write('\r\033[2K')  # Clear current line first
+                    sys.stdout.write('\033[1B')  # Move to bottom separator line
+                    sys.stdout.write('\n\033[2K')  # Move down and clear hint line
+                    sys.stdout.write('\n')  # Add extra newline at end
+                    sys.stdout.flush()
+                    raise KeyboardInterrupt
+                else:
+                    # First Ctrl-C - clear input and show hint
+                    ctrl_c_pressed = True
+                    # Clear current line and rewrite prompt (removes any ^C echo)
+                    sys.stdout.write('\r\033[2K')  # Clear current line
+                    sys.stdout.write(prompt)  # Rewrite prompt
+                    line = ''
+                    cursor_pos = 0
+                    # Clear any previous Ctrl-D hint
+                    if ctrl_d_pressed:
+                        ctrl_d_pressed = False
+                    # Show Ctrl-C hint below bottom separator
+                    sys.stdout.write('\033[1B')  # Move down to bottom separator line
+                    sys.stdout.write('\n')  # Move to line below (don't clear separator!)
+                    sys.stdout.write(f'{COLOR_FAINT}Press Ctrl-C again to exit{COLOR_END}')
+                    sys.stdout.write('\033[2A')  # Move back up 2 lines to input line
+                    sys.stdout.write(f'\033[{prompt_len + 1}G')  # Move to position after prompt
+                    sys.stdout.flush()
             
             elif ch == '\n' or ch == '\r':  # Enter - submit only if has input
                 if line.strip():
@@ -277,10 +306,11 @@ def read_input_with_box(prompt: str, prompt_gray: str, show_placeholder: bool = 
                     sys.stdout.write('\r')
                     sys.stdout.write(prompt)  # Rewrite prompt
                     sys.stdout.flush()
-                # Reset Ctrl-D state and clear hint if shown
-                if ctrl_d_pressed:
+                # Reset Ctrl-D/Ctrl-C state and clear hint if shown
+                if ctrl_d_pressed or ctrl_c_pressed:
                     ctrl_d_pressed = False
-                    # Clear the Ctrl-D hint below the box
+                    ctrl_c_pressed = False
+                    # Clear the hint below the box
                     sys.stdout.write('\033[1B')  # Move to bottom separator
                     sys.stdout.write('\n\033[2K')  # Move down and clear hint line
                     sys.stdout.write('\033[2A')  # Move back up to input line
@@ -345,8 +375,10 @@ class ProfilerCli(object):
                     readline.write_history_file(self.history_file)
                 sys.exit(0)
             except KeyboardInterrupt:
-                print("")
-                pass
+                # Second Ctrl-C in input - exit silently
+                if READLINE_AVAILABLE:
+                    readline.write_history_file(self.history_file)
+                sys.exit(0)
 
     def check_need_help(self, cmd: str) -> bool:
         return " --help " in cmd or " -h " in cmd or cmd.endswith("-h") or cmd.endswith("--help")
@@ -392,10 +424,12 @@ class ProfilerCli(object):
                         cmd[cmd.find(parts[0]) + len(parts[0]) :]
                     )
         except KeyboardInterrupt:
+            # Clear ^C from terminal and add newline
+            sys.stdout.write('\r\033[2K\n')
+            sys.stdout.flush()
             if self.current_plugin is not None:
                 try:
                     self.current_plugin.on_interrupted()
-                    print()  # create new line
                 except Exception:
                     show_error_info(traceback.format_exc())
         except Exception:
