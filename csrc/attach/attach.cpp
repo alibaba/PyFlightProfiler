@@ -1,4 +1,4 @@
-#include "LibraryInjector.h"
+#include "AttachAgent.h"
 #include "ProcessUtils.h"
 #include <cstdio>
 #include <cstdlib>
@@ -26,22 +26,22 @@ void extractParentDirectoryFromPath(std::string &file_system_path) {
 }
 
 /**
- * @brief Main entry point for the library injection utility
+ * @brief Main entry point for the profiler attach utility
  *
- * This program injects the flight_profiler_agent.so library into a target
- * process using advanced ptrace-based injection techniques.
+ * This program attaches the flight_profiler_agent.so library into a target
+ * process using advanced ptrace-based techniques.
  *
- * Usage: ./inject <process_identifier>
+ * Usage: ./attach <process_identifier>
  *
  * @param argument_count Number of command line arguments
  * @param argument_values Array of command line arguments
- * @return 0 on successful injection, 1 on failure
+ * @return 0 on successful attach, 1 on failure
  */
 int main(int argument_count, char **argument_values) {
   // Validate command line arguments
   if (argument_count < 2) {
-    std::cout << "Invalid inject command without target process identifier "
-                 "provided, USAGE: ./inject process_id!"
+    std::cout << "Invalid attach command without target process identifier "
+                 "provided, USAGE: ./attach process_id!"
               << std::endl;
     return 1;
   }
@@ -86,9 +86,8 @@ int main(int argument_count, char **argument_values) {
   std::string library_file_path(library_file_path_cstring);
   free(library_file_path_cstring);
 
-  // Create and execute the injector
-  LibraryInjector library_injector(target_process_id, library_file_path,
-                                   debug_mode);
+  // Create and execute the attach agent
+  AttachAgent attach_agent(target_process_id, library_file_path, debug_mode);
 
-  return static_cast<int>(library_injector.performInjection());
+  return static_cast<int>(attach_agent.performAttach());
 }

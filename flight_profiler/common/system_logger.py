@@ -12,6 +12,12 @@ def setup_logger(level=None):
     Returns:
         logging.Logger: Configured logger instance
     """
+    _logger = logging.getLogger("flight_profiler_logger")
+
+    # Prevent duplicate handlers when module is imported multiple times
+    if _logger.handlers:
+        return _logger
+
     if level is None:
         if os.getenv("FLIGHT_PROFILER_DEBUG", "0").strip().lower() in ("1", "true"):
             level = logging.DEBUG
@@ -19,12 +25,13 @@ def setup_logger(level=None):
             level = logging.INFO
 
     handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(asctime)s - %(filename)s - %(lineno)d - %(levelname)s - %(message)s")
+    formatter = logging.Formatter("%(asctime)s [PyFlightProfiler] %(levelname)s %(message)s")
     handler.setFormatter(formatter)
 
-    _logger = logging.getLogger("flight_profiler_logger")
     _logger.setLevel(level)
     _logger.addHandler(handler)
+    # Prevent propagation to root logger to avoid duplicate output
+    _logger.propagate = False
     return _logger
 
 

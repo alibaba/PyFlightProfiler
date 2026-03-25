@@ -272,28 +272,27 @@ bool ProcessTracer::verifySignalStatus() {
 }
 
 /**
- * @brief Restore the process state after a failed injection attempt
+ * @brief Restore the process state after a failed attach attempt
  *
  * This function performs the three required steps to restore the process state:
- * 1. Write the original memory data back to the injection address
+ * 1. Write the original memory data back to the attach address
  * 2. Restore the original register state
  * 3. Detach from the process
  *
- * @param injection_address Address where the shellcode was injected
- * @param backup_data Pointer to the original data at the injection address
+ * @param attach_address Address where the shellcode was loaded
+ * @param backup_data Pointer to the original data at the attach address
  * @param data_length Length of the backup data
  * @param registers Pointer to the original register state
  * @return true if restoration was successful, false otherwise
  */
-bool ProcessTracer::recoverInjection(long injection_address,
-                                     const void *backup_data,
-                                     size_t data_length, REG_TYPE *registers) {
-  // Step 1: Write the original memory data back to the injection address
-  if (!writeMemory(injection_address, backup_data, data_length)) {
+bool ProcessTracer::recoverAttach(long attach_address, const void *backup_data,
+                                  size_t data_length, REG_TYPE *registers) {
+  // Step 1: Write the original memory data back to the attach address
+  if (!writeMemory(attach_address, backup_data, data_length)) {
     if (debug_mode_) {
       std::cerr << "[ERROR] PyFlightProfiler: Failed to recover original "
                    "memory data at address 0x"
-                << std::hex << injection_address << std::dec << std::endl;
+                << std::hex << attach_address << std::dec << std::endl;
     }
     return false;
   }

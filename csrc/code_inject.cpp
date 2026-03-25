@@ -99,7 +99,7 @@ static void boot_entry(void *boot_raw) {
   if (tstate == NULL) {
     PyMem_DEL(boot_raw);
     fprintf(stderr,
-            "pyFlightProfiler: Not enough memory to create thread state.\n");
+            "[PyFlightProfiler] Not enough memory to create thread state.\n");
     return;
   }
 
@@ -107,14 +107,14 @@ static void boot_entry(void *boot_raw) {
   // here take gil lock, and set current PyThreadState
   PyEval_AcquireThread(tstate);
 
-  fprintf(stdout, "pyFlightProfiler: CodeInject Executing %s.\n", filename);
+  fprintf(stdout, "[PyFlightProfiler] Loading agent: %s\n", filename);
   PyObject *res = exec_python_entrance();
   if (res == NULL) {
     if (PyErr_ExceptionMatches(PyExc_SystemExit)) {
       /* SystemExit is ignored silently */
       PyErr_Clear();
     } else {
-      fprintf(stderr, "pyFlightProfiler: Unhandled exception in thread.\n");
+      fprintf(stderr, "[PyFlightProfiler] Unhandled exception in thread.\n");
       PyErr_PrintEx(0);
       // clear state, we don't want to crash the other process
       PyErr_Clear();
@@ -123,7 +123,7 @@ static void boot_entry(void *boot_raw) {
     Py_DECREF(res);
   }
 
-  fprintf(stdout, "pyFlightProfiler: Thread finished execution.\n");
+  fprintf(stdout, "[PyFlightProfiler] Agent initialization complete.\n");
   PyMem_RawFree(boot_raw);
 
   // clear tstat data
@@ -142,7 +142,7 @@ static int start_thread() {
   // PyMem_NEW or PyMem_Malloc not work in python 3.12
   boot = (struct bootstate *)PyMem_RawMalloc(sizeof(struct bootstate));
   if (boot == NULL) {
-    fprintf(stderr, "pyFlightProfiler: alloc memory for bootstate failed\n");
+    fprintf(stderr, "[PyFlightProfiler] alloc memory for bootstate failed\n");
     return 1;
   }
 
@@ -251,7 +251,7 @@ void inject_inner() {
 
   get_parent_directory(so_path_modify);
   char params_path[PATH_MAX]; // Make sure the buffer is large enough
-  snprintf(params_path, sizeof(params_path), "%s/inject_params.data",
+  snprintf(params_path, sizeof(params_path), "%s/attach_params.data",
            so_path_modify);
 
   FILE *file;

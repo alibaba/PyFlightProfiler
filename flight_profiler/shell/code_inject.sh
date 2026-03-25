@@ -75,7 +75,7 @@ dylib="$parentdir/lib/flight_profiler_agent.${SHARED_LIB_SUFFIX}"
 	echo "flight_profiler_agent.${SHARED_LIB_SUFFIX} not found." >&2 && \
 	echo "compile the library first." >&2 && exit 1
 
-pycode="$parentdir/code_inject.py"
+pycode="$parentdir/profiler_agent.py"
 
 if [ "$IS_DARWIN" = "false" ]; then
     tmp_file=$(mktemp -p /tmp "$(basename $0).XXXXXX")
