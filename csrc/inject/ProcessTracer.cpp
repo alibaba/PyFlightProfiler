@@ -96,6 +96,28 @@ bool ProcessTracer::continueExecution() {
   int result = ptrace(PTRACE_CONT, process_id_, NULL, NULL);
   CHECK_PTRACE_RESULT(result, PTRACE_CONT);
 
+  // Wait for the target process to stop (e.g., hit INT3 breakpoint)
+  int wait_status;
+  pid_t waited_pid = waitpid(process_id_, &wait_status, 0);
+  if (waited_pid != process_id_) {
+    if (debug_mode_) {
+      std::cerr << "[ERROR] PyFlightProfiler: waitpid(" << process_id_
+                << ") failed or returned unexpected pid " << waited_pid << ": "
+                << strerror(errno) << std::endl;
+    }
+    return false;
+  }
+
+  // Check if the process stopped (not exited or terminated)
+  if (!WIFSTOPPED(wait_status)) {
+    if (debug_mode_) {
+      std::cerr << "[ERROR] PyFlightProfiler: process " << process_id_
+                << " did not stop as expected, wait_status=" << wait_status
+                << std::endl;
+    }
+    return false;
+  }
+
   // Make sure the target process received SIGTRAP after stopping.
   return verifySignalStatus();
 }
@@ -201,16 +223,15 @@ bool ProcessTracer::writeMemory(unsigned long address, const void *buffer,
  * @return siginfo_t structure containing signal information
  */
 siginfo_t ProcessTracer::getSignalInfo() {
-  sleepMs(5);
-
   siginfo_t signal_info;
-  // When PTRACE_GETSIGINFO returns -1, tracee may not reach int3 point, so
-  // spin on it waiting at most 500ms
-  for (int i = 0; i < 100; i++) {
+  // With waitpid() in continueExecution(), the process should already be
+  // stopped. Retry a few times just in case, but much shorter timeout is
+  // needed.
+  for (int i = 0; i < 10; i++) {
     if (ptrace(PTRACE_GETSIGINFO, process_id_, NULL, &signal_info) != -1) {
       return signal_info;
     }
-    sleepMs(5);
+    sleepMs(1);
   }
 
   // this is mostly due to gil lock not released, so injected code cannot

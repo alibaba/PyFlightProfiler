@@ -235,9 +235,17 @@ LibraryInjector::initializeInjectionEnvironment(long &code_injection_address,
   // Copy original registers to working registers
   *working_registers = *original_registers;
 
-  // Find a good address to copy code to
+  // Find a good address to copy code to.
+  // The findFreeMemoryAddress function returns the END of the first executable
+  // region minus a safe offset, placing shellcode in the alignment padding area
+  // that is typically unused but still has execute permissions.
   code_injection_address =
       ProcessUtils::findFreeMemoryAddress(target_process_id_) + 8;
+
+  if (process_tracer_.isDebugMode()) {
+    std::cout << "[DEBUG] PyFlightProfiler: Using injection address at 0x"
+              << std::hex << code_injection_address << std::dec << std::endl;
+  }
 
   // Set the target's rip to the injection address
   // Advance by 2 bytes because rip gets incremented by the size of the current
