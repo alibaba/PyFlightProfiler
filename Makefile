@@ -30,7 +30,7 @@ flight_profiler_agent.${SHARED_LIB_SUFFIX}:
 	@mv build/libfrida-gum.* build/lib/
 	@echo "compiling flight_profiler_agent.${SHARED_LIB_SUFFIX}"
 	@${CC} ${CFLAGS} ${LDFLAGS} -I${PY_HEADER_PATH} -Ibuild/include -Icsrc \
-	csrc/code_inject.cpp csrc/frida_profiler.cpp \
+	csrc/profiler_attach.cpp csrc/frida_profiler.cpp \
 	csrc/time_util.cpp csrc/symbol_util.cpp csrc/python_util.cpp \
     csrc/py_gil_intercept.cpp csrc/py_gil_stat.cpp csrc/stack/py_stack.cpp \
 	-o build/lib/flight_profiler_agent.${SHARED_LIB_SUFFIX} -Lbuild/lib -lfrida-gum  -ldl

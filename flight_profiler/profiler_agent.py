@@ -24,9 +24,9 @@ def load_frida_gum():
         nm_symbol_offset = int("${nm_symbol_offset}")
         flight_profiler_agent_so_path = "${flight_profiler_agent_so_path}"
         lib = ctypes.CDLL(flight_profiler_agent_so_path)
-        lib.inject_init_frida_gum.argtypes = [ctypes.c_ulong]
-        lib.inject_init_frida_gum.restype = ctypes.c_int
-        if lib.inject_init_frida_gum(nm_symbol_offset) != 0:
+        lib.init_native_profiler.argtypes = [ctypes.c_ulong]
+        lib.init_native_profiler.restype = ctypes.c_int
+        if lib.init_native_profiler(nm_symbol_offset) != 0:
             logger.warning("Native profiler init failed, gilstat is disabled!")
     except:
         logger.exception("Native profiler agent load failed!")

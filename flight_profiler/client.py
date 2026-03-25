@@ -405,6 +405,7 @@ class ProfilerCli(object):
 
                     module = importlib.import_module(module_name)
                 except ModuleNotFoundError as e:
+                    print()  # Empty line before error message
                     print(
                         f"{COLOR_RED} Unsupported command {parts[0]}, use {COLOR_END}{COLOR_ORANGE}help{COLOR_END}{COLOR_RED} "
                         f"to find available commands!{COLOR_END}"
@@ -628,7 +629,7 @@ def do_inject_on_mac(free_port: int, server_pid: str, debug: bool = False, diagn
     """
     tmp_fd, tmp_file_path = tempfile.mkstemp()
     current_directory = os.path.dirname(os.path.abspath(__file__))
-    shell_path = os.path.join(current_directory, "shell/code_inject.sh")
+    shell_path = os.path.join(current_directory, "shell/profiler_attach.sh")
 
     # Prepare command arguments
     cmd_args = [str(shell_path), str(os.getpid()), server_pid, tmp_file_path, str(free_port)]
