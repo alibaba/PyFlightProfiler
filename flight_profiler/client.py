@@ -113,7 +113,7 @@ def ensure_space_from_bottom(min_lines: int = 3) -> None:
         pass
 
 
-def read_input_with_box(prompt: str, prompt_gray: str) -> str:
+def read_input_with_box(prompt: str, prompt_gray: str, show_placeholder: bool = False) -> str:
     """
     Read single-line input with a box frame (top and bottom separators).
     The input area appears between two horizontal lines.
@@ -124,6 +124,7 @@ def read_input_with_box(prompt: str, prompt_gray: str) -> str:
     """
     terminal_width = shutil.get_terminal_size().columns
     separator = f"{COLOR_FAINT}{BOX_HORIZONTAL * terminal_width}{COLOR_END}"
+    placeholder = "help"
     
     # Fallback for systems without termios (e.g., Windows)
     if not TERMIOS_AVAILABLE:
@@ -135,6 +136,9 @@ def read_input_with_box(prompt: str, prompt_gray: str) -> str:
     # Print the box frame: top line, input line placeholder, bottom line
     print(separator)                          # Top separator
     sys.stdout.write(prompt)                  # Prompt
+    # Show placeholder if requested
+    if show_placeholder:
+        sys.stdout.write(f'{COLOR_FAINT}{placeholder}{COLOR_END}')
     sys.stdout.write('\n')                    # Move to next line
     print(separator)                          # Bottom separator
     
@@ -149,6 +153,8 @@ def read_input_with_box(prompt: str, prompt_gray: str) -> str:
     
     line = ''
     cursor_pos = 0
+    ctrl_d_pressed = False  # Track if Ctrl-D was pressed once
+    placeholder_visible = show_placeholder  # Track if placeholder is currently shown
     
     def cleanup_box_and_show_result(input_text: str):
         """Clear the box frame and show the command with gray prompt."""
@@ -179,13 +185,26 @@ def read_input_with_box(prompt: str, prompt_gray: str) -> str:
             
             if ch == '\x04':  # Ctrl-D
                 if not line.strip():
-                    # Move to bottom line and exit
-                    sys.stdout.write('\033[1B\n')  # Move down 1 line past bottom separator
-                    sys.stdout.flush()
-                    raise EOFError("Ctrl-D on empty input")
-                # Submit with Ctrl-D if there's content
-                cleanup_box_and_show_result(line)
-                return line.strip()
+                    if ctrl_d_pressed:
+                        # Second Ctrl-D - exit silently, clear hint first
+                        sys.stdout.write('\033[1B')  # Move to bottom separator line
+                        sys.stdout.write('\n\033[2K')  # Move down and clear hint line
+                        sys.stdout.write('\n')  # Add extra newline at end
+                        sys.stdout.flush()
+                        raise EOFError()
+                    else:
+                        # First Ctrl-D - show hint below bottom separator
+                        ctrl_d_pressed = True
+                        sys.stdout.write('\033[1B')  # Move down to bottom separator line
+                        sys.stdout.write('\n')  # Move to line below
+                        sys.stdout.write(f'{COLOR_FAINT}Press Ctrl-D again to exit{COLOR_END}')
+                        sys.stdout.write('\033[2A')  # Move back up 2 lines to input line
+                        sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
+                        sys.stdout.flush()
+                else:
+                    # Submit with Ctrl-D if there's content
+                    cleanup_box_and_show_result(line)
+                    return line.strip()
             
             elif ch == '\x03':  # Ctrl-C
                 sys.stdout.write('\033[1B\n')  # Move down past the box
@@ -250,6 +269,22 @@ def read_input_with_box(prompt: str, prompt_gray: str) -> str:
                         sys.stdout.flush()
             
             elif ch >= ' ' and ch <= '~':  # Printable character
+                # Clear placeholder on first input
+                if placeholder_visible:
+                    placeholder_visible = False
+                    # Clear placeholder text
+                    sys.stdout.write('\033[2K')  # Clear current line
+                    sys.stdout.write('\r')
+                    sys.stdout.write(prompt)  # Rewrite prompt
+                    sys.stdout.flush()
+                # Reset Ctrl-D state and clear hint if shown
+                if ctrl_d_pressed:
+                    ctrl_d_pressed = False
+                    # Clear the Ctrl-D hint below the box
+                    sys.stdout.write('\033[1B')  # Move to bottom separator
+                    sys.stdout.write('\n\033[2K')  # Move down and clear hint line
+                    sys.stdout.write('\033[2A')  # Move back up to input line
+                    sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
                 line = line[:cursor_pos] + ch + line[cursor_pos:]
                 cursor_pos += 1
                 sys.stdout.write(ch)
@@ -276,6 +311,7 @@ class ProfilerCli(object):
         self.history_file = os.path.join(output_dir, "cli_history")
         set_history_file_path(self.history_file)
         self.current_plugin = None
+        self.first_input = True  # Track if this is the first command input
 
     def run(self):
         build_welcome_box(str(self.server_pid), self.target_executable)
@@ -290,10 +326,14 @@ class ProfilerCli(object):
                 prompt_gray = f"{COLOR_FAINT}❯{COLOR_END} "
                 
                 # Read input with box frame (Enter to submit, Ctrl-D to exit)
-                cmd = read_input_with_box(prompt_active, prompt_gray)
+                # Show placeholder hint only on first input
+                cmd = read_input_with_box(prompt_active, prompt_gray, show_placeholder=self.first_input)
                 
                 if len(cmd) == 0:
                     continue
+                
+                # After first successful command, don't show placeholder anymore
+                self.first_input = False
                     
                 # Add to history if readline is available
                 if READLINE_AVAILABLE:
@@ -303,7 +343,7 @@ class ProfilerCli(object):
             except EOFError:
                 if READLINE_AVAILABLE:
                     readline.write_history_file(self.history_file)
-                sys.exit("CTRL+D pressed. Exiting Profiler.")
+                sys.exit(0)
             except KeyboardInterrupt:
                 print("")
                 pass
