@@ -167,10 +167,8 @@ def read_input_with_box(prompt: str, prompt_gray: str) -> str:
         sys.stdout.write(f'{prompt_gray}{input_text}')
         # Move down to line 2 (old input line)
         sys.stdout.write('\n\033[2K')  # Clear old input line
-        # Move down to line 3 (bottom separator)  
+        # Move down to line 3 (bottom separator), command output starts here
         sys.stdout.write('\n\033[2K')  # Clear bottom separator
-        # Now we're at line 3, move to new line for command output
-        sys.stdout.write('\n')
         sys.stdout.flush()
     
     try:
