@@ -184,21 +184,29 @@ class StackServerPlugin(ServerPlugin):
         """
         Get all async tasks from all running event loops across all threads.
         Returns a list of task info dictionaries.
+
+        Supports multiple Python versions:
+        - Python 3.7-3.11: uses asyncio.tasks._all_tasks (WeakSet of all tasks)
+        - Python 3.12+: uses asyncio.tasks._scheduled_tasks (WeakSet of pending tasks)
         """
         all_tasks_info = []
         seen_task_ids = set()
 
-        # Directly access asyncio's global _all_tasks WeakSet
-        # This contains ALL tasks from ALL event loops, not just current loop
+        # Directly access asyncio's global task tracking WeakSet
+        # This contains tasks from ALL event loops, not just current loop
         try:
-            # _all_tasks is in asyncio.tasks module
             import asyncio.tasks as asyncio_tasks
+            all_tasks_weak = None
+
+            # Python 3.7-3.11: _all_tasks contains all tasks (pending + done)
             if hasattr(asyncio_tasks, '_all_tasks'):
                 all_tasks_weak = asyncio_tasks._all_tasks
             elif hasattr(asyncio, '_all_tasks'):
                 all_tasks_weak = asyncio._all_tasks
-            else:
-                all_tasks_weak = None
+            # Python 3.12+: _scheduled_tasks contains pending tasks
+            elif hasattr(asyncio_tasks, '_scheduled_tasks'):
+                all_tasks_weak = asyncio_tasks._scheduled_tasks
+
             if all_tasks_weak is not None:
                 # Safe iteration over WeakSet (may need retry due to concurrent modification)
                 for attempt in range(10):

@@ -1,9 +1,41 @@
 import os
+import tempfile
 import time
 import unittest
 
 from flight_profiler.test.plugins.profile_integration import ProfileIntegration
 from flight_profiler.utils.env_util import is_linux
+
+
+# Async test script content - placed outside flight_profiler directory to avoid filtering
+ASYNC_TEST_SCRIPT = '''
+import asyncio
+import sys
+
+async def long_running_task():
+    """A long running async task that can be detected."""
+    while True:
+        await asyncio.sleep(1)
+
+async def nested_coroutine_inner():
+    """Inner nested coroutine."""
+    await asyncio.sleep(10)
+
+async def nested_coroutine_outer():
+    """Outer nested coroutine that awaits inner."""
+    await nested_coroutine_inner()
+
+async def main():
+    """Main async entry point."""
+    task1 = asyncio.create_task(long_running_task(), name="TestLongRunningTask")
+    task2 = asyncio.create_task(nested_coroutine_outer(), name="TestNestedCoroutine")
+    await asyncio.sleep(60)
+
+if __name__ == "__main__":
+    print("plugin unit test script started")
+    sys.stdout.flush()
+    asyncio.run(main())
+'''
 
 
 class StackPluginTest(unittest.TestCase):
@@ -110,8 +142,52 @@ class StackPluginTest(unittest.TestCase):
         finally:
             integration.stop()
 
+    def test_stack_async(self):
+        """Test stack -a command to detect asyncio tasks.
+
+        Note: The test script is created in a temp directory (outside flight_profiler)
+        to avoid being filtered by _is_flight_profiler_task().
+        """
+        # Create temp script file outside flight_profiler directory
+        with tempfile.NamedTemporaryFile(
+            mode='w', suffix='_async_test.py', delete=False
+        ) as f:
+            f.write(ASYNC_TEST_SCRIPT)
+            temp_script = f.name
+
+        integration = ProfileIntegration()
+        try:
+            integration.start(temp_script, 20)
+            integration.execute_profile_cmd("stack -a")
+            process = integration.client_process
+            find_header = False
+            find_task = False
+            start = time.time()
+            while time.time() - start < 20:
+                output = process.stdout.readline()
+                print(output)
+                if output:
+                    line = str(output)
+                    if "Async Coroutine/Task Stacks" in line:
+                        find_header = True
+                    if "TestLongRunningTask" in line or "TestNestedCoroutine" in line:
+                        find_task = True
+                    if find_header and find_task:
+                        break
+                else:
+                    break
+
+            self.assertTrue(find_header, "Did not find 'Async Coroutine/Task Stacks' header")
+            self.assertTrue(find_task, "Did not find any test async task")
+        except Exception:
+            raise
+        finally:
+            integration.stop()
+            os.unlink(temp_script)
+
 
 if __name__ == "__main__":
     test = StackPluginTest()
     test.test_stack()
     test.test_stack_filepath()
+    test.test_stack_async()
