@@ -63,6 +63,7 @@ static PyObject *exec_python_entrance() {
     }
   }
 
+
   if (exists) {
     Py_BEGIN_ALLOW_THREADS fp = fopen(filename, "r" PY_STDIOTEXTMODE);
     Py_END_ALLOW_THREADS
