@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "flight_profiler"
-version = "1.0.5"
+version = "1.0.6"
 description = "A diagnostic toolkit for on-the-fly analysis of remote python processes."
 homepage = "https://github.com/alibaba/PyFlightProfiler"
 readme = "README.md"

@@ -6,7 +6,6 @@ import unittest
 from flight_profiler.test.plugins.profile_integration import ProfileIntegration
 from flight_profiler.utils.env_util import is_linux
 
-
 # Async test script content - placed outside flight_profiler directory to avoid filtering
 ASYNC_TEST_SCRIPT = '''
 import asyncio

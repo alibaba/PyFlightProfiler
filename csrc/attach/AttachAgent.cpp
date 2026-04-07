@@ -218,10 +218,9 @@ ExitCode AttachAgent::performAttach() {
  * @param working_registers Pointer to store the modified register state
  * @return ExitCode indicating success or failure
  */
-ExitCode
-AttachAgent::initializeAttachEnvironment(long &code_attach_address,
-                                         REG_TYPE *original_registers,
-                                         REG_TYPE *working_registers) {
+ExitCode AttachAgent::initializeAttachEnvironment(long &code_attach_address,
+                                                  REG_TYPE *original_registers,
+                                                  REG_TYPE *working_registers) {
   // Attach to process
   if (!process_tracer_.attach()) {
     return ExitCode::ATTACH_FAILED;
@@ -324,10 +323,12 @@ AttachAgent::createShellcodePayload(size_t &payload_size,
  * @param initial_registers Pointer to the original register state
  * @return ExitCode indicating success or failure
  */
-ExitCode AttachAgent::orchestrateAttachSequence(
-    long attach_address, long malloc_function_address,
-    long free_function_address, long dlopen_function_address,
-    int library_path_string_length, REG_TYPE *initial_registers) {
+ExitCode AttachAgent::orchestrateAttachSequence(long attach_address,
+                                                long malloc_function_address,
+                                                long free_function_address,
+                                                long dlopen_function_address,
+                                                int library_path_string_length,
+                                                REG_TYPE *initial_registers) {
   // Create shellcode payload
   size_t shellcode_byte_size;
   intptr_t return_offset;

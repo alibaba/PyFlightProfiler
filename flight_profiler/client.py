@@ -4,7 +4,6 @@ import json
 import os
 import platform
 import re
-import shutil
 import signal
 import socket
 import sys
@@ -31,19 +30,16 @@ from flight_profiler.utils.cli_util import (
 )
 from flight_profiler.utils.env_util import is_linux, is_mac, py_higher_than_314
 from flight_profiler.utils.render_util import (
-    BANNER_COLOR_CYAN,
-    BOX_HORIZONTAL,
-    COLOR_BRIGHT_GREEN,
     COLOR_END,
     COLOR_FAINT,
     COLOR_GREEN,
     COLOR_ORANGE,
     COLOR_RED,
     COLOR_WHITE_255,
-    build_prompt_separator,
     build_welcome_box,
 )
 from flight_profiler.utils.shell_util import execute_shell, get_py_bin_path
+from flight_profiler.utils.terminal_input import BoxLineEditor
 
 # Check readline availability, which may not be enabled in some python distribution.
 try:
@@ -51,349 +47,6 @@ try:
     READLINE_AVAILABLE = readline is not None
 except ImportError:
     READLINE_AVAILABLE = False
-
-# Check termios/tty availability for advanced terminal input (Unix only)
-try:
-    import termios
-    import tty
-    TERMIOS_AVAILABLE = True
-except ImportError:
-    TERMIOS_AVAILABLE = False
-
-
-def get_cursor_position() -> int:
-    """
-    Get current cursor row position in terminal (1-based).
-    Returns -1 if unable to detect.
-    """
-    if not TERMIOS_AVAILABLE:
-        return -1
-    try:
-        fd = sys.stdin.fileno()
-        old_settings = termios.tcgetattr(fd)
-        try:
-            tty.setraw(fd)
-            sys.stdout.write('\033[6n')
-            sys.stdout.flush()
-            response = ''
-            while True:
-                ch = sys.stdin.read(1)
-                response += ch
-                if ch == 'R':
-                    break
-            # Response format: \033[row;colR
-            match = re.search(r'\[(\d+);(\d+)R', response)
-            if match:
-                return int(match.group(1))
-        finally:
-            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    except Exception:
-        pass
-    return -1
-
-
-def ensure_space_from_bottom(min_lines: int = 3) -> None:
-    """
-    Ensure there's enough space from the bottom of terminal.
-    If cursor is too close to bottom, scroll up by printing newlines.
-    """
-    try:
-        terminal_height = shutil.get_terminal_size().lines
-        cursor_row = get_cursor_position()
-        if cursor_row > 0:
-            lines_from_bottom = terminal_height - cursor_row
-            if lines_from_bottom < min_lines:
-                # Need to scroll up
-                scroll_lines = min_lines - lines_from_bottom
-                print('\n' * scroll_lines, end='')
-                # Move cursor back up
-                sys.stdout.write(f'\033[{scroll_lines}A')
-                sys.stdout.flush()
-    except Exception:
-        pass
-
-
-def read_input_with_box(prompt: str, prompt_gray: str, show_placeholder: bool = False) -> str:
-    """
-    Read single-line input with a box frame (top and bottom separators).
-    The input area appears between two horizontal lines.
-    Enter submits, Ctrl-D exits.
-    After submission, clears the box and changes prompt to gray.
-    
-    Falls back to standard input() if termios is not available.
-    """
-    terminal_width = shutil.get_terminal_size().columns
-    separator = f"{COLOR_FAINT}{BOX_HORIZONTAL * terminal_width}{COLOR_END}"
-    placeholder = "help"
-    
-    # Fallback for systems without termios (e.g., Windows)
-    if not TERMIOS_AVAILABLE:
-        print(separator)
-        result = input(prompt).strip()
-        print(separator)
-        return result
-    
-    # Print the box frame: top line, input line placeholder, bottom line
-    print(separator)                          # Top separator
-    sys.stdout.write(prompt)                  # Prompt
-    # Show placeholder if requested
-    if show_placeholder:
-        sys.stdout.write(f'{COLOR_FAINT}{placeholder}{COLOR_END}')
-    sys.stdout.write('\n')                    # Move to next line
-    print(separator)                          # Bottom separator
-    
-    # Move cursor back up to the input line (2 lines up, then to prompt position)
-    sys.stdout.write('\033[2A')               # Move up 2 lines
-    prompt_len = 2                            # ❯ + space (❯ is 1 width char)
-    sys.stdout.write(f'\033[{prompt_len + 1}G')  # Move to position after prompt
-    sys.stdout.flush()
-    
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    
-    line = ''
-    cursor_pos = 0
-    ctrl_d_pressed = False  # Track if Ctrl-D was pressed once
-    ctrl_c_pressed = False  # Track if Ctrl-C was pressed once
-    placeholder_visible = show_placeholder  # Track if placeholder is currently shown
-    
-    # History navigation
-    history_index = -1  # -1 means current input, 0 is most recent history
-    saved_line = ''  # Save current input when navigating history
-    
-    def get_history_length():
-        """Get the number of history entries."""
-        if READLINE_AVAILABLE:
-            return readline.get_current_history_length()
-        return 0
-    
-    def get_history_item(index):
-        """Get history item by index (1-based in readline)."""
-        if READLINE_AVAILABLE and index > 0:
-            return readline.get_history_item(index)
-        return None
-    
-    def replace_line(new_text):
-        """Replace current line with new text and update display."""
-        nonlocal line, cursor_pos
-        # Clear current line content
-        sys.stdout.write('\r')
-        sys.stdout.write(prompt)
-        sys.stdout.write(' ' * len(line))
-        sys.stdout.write('\r')
-        sys.stdout.write(prompt)
-        # Write new content
-        sys.stdout.write(new_text)
-        sys.stdout.flush()
-        line = new_text
-        cursor_pos = len(line)
-    
-    def cleanup_box_and_show_result(input_text: str):
-        """Clear the box frame and show the command with gray prompt."""
-        # Current cursor is on the input line (line 2)
-        # Line 1: top separator
-        # Line 2: input line (cursor here)
-        # Line 3: bottom separator
-        
-        # Move to start of line
-        sys.stdout.write('\r')
-        # Move up to top separator (line 1)
-        sys.stdout.write('\033[1A')
-        # Clear top separator line
-        sys.stdout.write('\033[2K')
-        # Print gray prompt + input text (replaces top separator)
-        sys.stdout.write(f'{prompt_gray}{input_text}')
-        # Move down to line 2 (old input line)
-        sys.stdout.write('\n\033[2K')  # Clear old input line
-        # Move down to line 3 (bottom separator), command output starts here
-        sys.stdout.write('\n\033[2K')  # Clear bottom separator
-        sys.stdout.flush()
-    
-    try:
-        # Set terminal to cbreak mode but also disable ISIG to capture Ctrl-C as character
-        new_settings = termios.tcgetattr(fd)
-        new_settings[3] = new_settings[3] & ~termios.ECHO & ~termios.ICANON & ~termios.ISIG  # lflags
-        new_settings[6][termios.VMIN] = 1
-        new_settings[6][termios.VTIME] = 0
-        termios.tcsetattr(fd, termios.TCSADRAIN, new_settings)
-        
-        while True:
-            ch = sys.stdin.read(1)
-            
-            if ch == '\x04':  # Ctrl-D
-                if not line.strip():
-                    if ctrl_d_pressed:
-                        # Second Ctrl-D - exit silently, clear hint first
-                        sys.stdout.write('\033[1B')  # Move to bottom separator line
-                        sys.stdout.write('\n\033[2K')  # Move down and clear hint line
-                        sys.stdout.write('\n')  # Add extra newline at end
-                        sys.stdout.flush()
-                        raise EOFError()
-                    else:
-                        # First Ctrl-D - show hint below bottom separator
-                        ctrl_d_pressed = True
-                        sys.stdout.write('\033[1B')  # Move down to bottom separator line
-                        sys.stdout.write('\n')  # Move to line below
-                        sys.stdout.write(f'{COLOR_FAINT}Press Ctrl-D again to exit{COLOR_END}')
-                        sys.stdout.write('\033[2A')  # Move back up 2 lines to input line
-                        sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
-                        sys.stdout.flush()
-                else:
-                    # Submit with Ctrl-D if there's content
-                    cleanup_box_and_show_result(line)
-                    return line.strip()
-            
-            elif ch == '\x03':  # Ctrl-C
-                if ctrl_c_pressed:
-                    # Second Ctrl-C - exit silently, clear hint but keep bottom separator
-                    sys.stdout.write('\r\033[2K')  # Clear current line first
-                    sys.stdout.write('\033[1B')  # Move to bottom separator line
-                    sys.stdout.write('\n\033[2K')  # Move down and clear hint line
-                    sys.stdout.write('\n')  # Add extra newline at end
-                    sys.stdout.flush()
-                    raise KeyboardInterrupt
-                else:
-                    # First Ctrl-C - clear input and show hint
-                    ctrl_c_pressed = True
-                    # Clear current line and rewrite prompt (removes any ^C echo)
-                    sys.stdout.write('\r\033[2K')  # Clear current line
-                    sys.stdout.write(prompt)  # Rewrite prompt
-                    line = ''
-                    cursor_pos = 0
-                    # Clear any previous Ctrl-D hint
-                    if ctrl_d_pressed:
-                        ctrl_d_pressed = False
-                    # Show Ctrl-C hint below bottom separator
-                    sys.stdout.write('\033[1B')  # Move down to bottom separator line
-                    sys.stdout.write('\n')  # Move to line below (don't clear separator!)
-                    sys.stdout.write(f'{COLOR_FAINT}Press Ctrl-C again to exit{COLOR_END}')
-                    sys.stdout.write('\033[2A')  # Move back up 2 lines to input line
-                    sys.stdout.write(f'\033[{prompt_len + 1}G')  # Move to position after prompt
-                    sys.stdout.flush()
-            
-            elif ch == '\n' or ch == '\r':  # Enter - submit only if has input
-                if line.strip():
-                    cleanup_box_and_show_result(line)
-                    return line.strip()
-                # Empty input - do nothing, stay in place
-            
-            elif ch == '\x7f' or ch == '\x08':  # Backspace
-                if cursor_pos > 0:
-                    line = line[:cursor_pos-1] + line[cursor_pos:]
-                    cursor_pos -= 1
-                    # Move back, clear to end of line, reprint rest
-                    sys.stdout.write('\b')
-                    rest = line[cursor_pos:]
-                    sys.stdout.write(rest + ' ')
-                    sys.stdout.write('\b' * (len(rest) + 1))
-                    sys.stdout.flush()
-            
-            elif ch == '\033':  # Escape sequence (arrow keys)
-                seq1 = sys.stdin.read(1)
-                if seq1 == '[':
-                    seq2 = sys.stdin.read(1)
-                    if seq2 == 'D':  # Left arrow
-                        if cursor_pos > 0:
-                            cursor_pos -= 1
-                            sys.stdout.write('\033[D')
-                            sys.stdout.flush()
-                    elif seq2 == 'C':  # Right arrow
-                        if cursor_pos < len(line):
-                            cursor_pos += 1
-                            sys.stdout.write('\033[C')
-                            sys.stdout.flush()
-                    elif seq2 == 'A':  # Up arrow - previous history
-                        history_len = get_history_length()
-                        if history_len > 0:
-                            # Clear placeholder if visible
-                            if placeholder_visible:
-                                placeholder_visible = False
-                                sys.stdout.write('\033[2K')
-                                sys.stdout.write('\r')
-                                sys.stdout.write(prompt)
-                                sys.stdout.flush()
-                            # Save current line when first navigating
-                            if history_index == -1:
-                                saved_line = line
-                            # Move to older history
-                            if history_index < history_len - 1:
-                                history_index += 1
-                                hist_item = get_history_item(history_len - history_index)
-                                if hist_item:
-                                    replace_line(hist_item)
-                    elif seq2 == 'B':  # Down arrow - next history
-                        if history_index > -1:
-                            # Clear placeholder if visible
-                            if placeholder_visible:
-                                placeholder_visible = False
-                                sys.stdout.write('\033[2K')
-                                sys.stdout.write('\r')
-                                sys.stdout.write(prompt)
-                                sys.stdout.flush()
-                            history_index -= 1
-                            if history_index == -1:
-                                # Back to current input
-                                replace_line(saved_line)
-                            else:
-                                history_len = get_history_length()
-                                hist_item = get_history_item(history_len - history_index)
-                                if hist_item:
-                                    replace_line(hist_item)
-            
-            elif ch == '\t':  # Tab - command completion
-                words = line.strip().split()
-                # Only complete first command when no space after it
-                if len(words) <= 1 and (len(line) == 0 or not line.endswith(' ')):
-                    prefix = words[0] if words else ''
-                    matches = [name for name in HELP_COMMANDS_NAMES if name.startswith(prefix)]
-                    if len(matches) == 1:
-                        # Single match - auto complete
-                        completion = matches[0] + ' '
-                        # Clear current input and show completed text
-                        sys.stdout.write('\b' * cursor_pos)
-                        sys.stdout.write(' ' * len(line))
-                        sys.stdout.write('\b' * len(line))
-                        sys.stdout.write(completion)
-                        sys.stdout.flush()
-                        line = completion
-                        cursor_pos = len(line)
-                    elif len(matches) > 1:
-                        # Multiple matches - show options below
-                        sys.stdout.write('\n')
-                        sys.stdout.write(f"{COLOR_FAINT}  {' '.join(matches)}{COLOR_END}")
-                        sys.stdout.write(f'\033[1A')  # Move up 1 line
-                        sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
-                        sys.stdout.flush()
-            
-            elif ch >= ' ' and ch <= '~':  # Printable character
-                # Clear placeholder on first input
-                if placeholder_visible:
-                    placeholder_visible = False
-                    # Clear placeholder text
-                    sys.stdout.write('\033[2K')  # Clear current line
-                    sys.stdout.write('\r')
-                    sys.stdout.write(prompt)  # Rewrite prompt
-                    sys.stdout.flush()
-                # Reset Ctrl-D/Ctrl-C state and clear hint if shown
-                if ctrl_d_pressed or ctrl_c_pressed:
-                    ctrl_d_pressed = False
-                    ctrl_c_pressed = False
-                    # Clear the hint below the box
-                    sys.stdout.write('\033[1B')  # Move to bottom separator
-                    sys.stdout.write('\n\033[2K')  # Move down and clear hint line
-                    sys.stdout.write('\033[2A')  # Move back up to input line
-                    sys.stdout.write(f'\033[{prompt_len + cursor_pos + 1}G')  # Restore cursor position
-                line = line[:cursor_pos] + ch + line[cursor_pos:]
-                cursor_pos += 1
-                sys.stdout.write(ch)
-                rest = line[cursor_pos:]
-                if rest:
-                    sys.stdout.write(rest)
-                    sys.stdout.write('\b' * len(rest))
-                sys.stdout.flush()
-    
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
 class ProfilerCli(object):
 
@@ -409,41 +62,36 @@ class ProfilerCli(object):
         self.history_file = os.path.join(output_dir, "cli_history")
         set_history_file_path(self.history_file)
         self.current_plugin = None
-        self.first_input = True  # Track if this is the first command input
+        self.first_input = True
+        self.editor = BoxLineEditor(completions=HELP_COMMANDS_NAMES)
 
     def run(self):
         build_welcome_box(str(self.server_pid), self.target_executable)
 
+        prompt_active = f"{COLOR_WHITE_255}❯{COLOR_END} "
+        prompt_gray = f"{COLOR_FAINT}❯{COLOR_END} "
+
         while True:
             try:
-                # Ensure there's space from terminal bottom (at least 5 lines for input box)
-                ensure_space_from_bottom(5)
-                
-                # White/bright prompt for active input, gray for history
-                prompt_active = f"{COLOR_WHITE_255}❯{COLOR_END} "
-                prompt_gray = f"{COLOR_FAINT}❯{COLOR_END} "
-                
-                # Read input with box frame (Enter to submit, Ctrl-D to exit)
-                # Show placeholder hint only on first input
-                cmd = read_input_with_box(prompt_active, prompt_gray, show_placeholder=self.first_input)
-                
+                cmd = self.editor.read_input(
+                    prompt_active, prompt_gray,
+                    show_placeholder=self.first_input,
+                )
+
                 if len(cmd) == 0:
                     continue
-                
-                # After first successful command, don't show placeholder anymore
+
                 self.first_input = False
-                    
-                # Add to history if readline is available
+
                 if READLINE_AVAILABLE:
                     readline.add_history(cmd)
-                    
+
                 self.do_action(cmd)
             except EOFError:
                 if READLINE_AVAILABLE:
                     readline.write_history_file(self.history_file)
                 sys.exit(0)
             except KeyboardInterrupt:
-                # Second Ctrl-C in input - exit silently
                 if READLINE_AVAILABLE:
                     readline.write_history_file(self.history_file)
                 sys.exit(0)
@@ -452,56 +100,56 @@ class ProfilerCli(object):
         return " --help " in cmd or " -h " in cmd or cmd.endswith("-h") or cmd.endswith("--help")
 
     def do_action(self, cmd: str):
-        try:
-            cmd = cmd.strip()
-            parts = re.split(r"\s", cmd)
-            if parts[0] == "quit" or parts[0] == "exit" or parts[0] == "stop":
-                if READLINE_AVAILABLE:
-                    readline.write_history_file(self.history_file)
-                from flight_profiler.plugins.cli_plugin import QuitCliPlugin
+        with self.editor.suppress_input():
+            try:
+                cmd = cmd.strip()
+                parts = re.split(r"\s", cmd)
+                if parts[0] == "quit" or parts[0] == "exit" or parts[0] == "stop":
+                    if READLINE_AVAILABLE:
+                        readline.write_history_file(self.history_file)
+                    from flight_profiler.plugins.cli_plugin import QuitCliPlugin
 
-                self.current_plugin = QuitCliPlugin(self.port, self.server_pid)
-                self.current_plugin.do_action(cmd[cmd.find(parts[0]) + len(parts[0]) :])
-            else:
-                module_name = (
-                    "flight_profiler.plugins." + parts[0] + ".cli_plugin_" + parts[0]
-                )
-                try:
-                    if (py_higher_than_314() and parts[0] in FORBIDDEN_COMMANDS_IN_PY314 or
-                        not READLINE_AVAILABLE and parts[0] == "history"):
-                        raise ModuleNotFoundError
-
-                    module = importlib.import_module(module_name)
-                except ModuleNotFoundError as e:
-                    print(
-                        f"{COLOR_RED} Unsupported command {parts[0]}, use {COLOR_END}{COLOR_ORANGE}help{COLOR_END}{COLOR_RED} "
-                        f"to find available commands!{COLOR_END}\n"
+                    self.current_plugin = QuitCliPlugin(self.port, self.server_pid)
+                    self.current_plugin.do_action(cmd[cmd.find(parts[0]) + len(parts[0]) :])
+                else:
+                    module_name = (
+                        "flight_profiler.plugins." + parts[0] + ".cli_plugin_" + parts[0]
                     )
-                    return
-                self.current_plugin = module.get_instance(self.port, self.server_pid)
-                if self.check_need_help(cmd):
-                    help_msg = self.current_plugin.get_help()
-                    if help_msg is not None:
-                        show_normal_info(help_msg)
+                    try:
+                        if (py_higher_than_314() and parts[0] in FORBIDDEN_COMMANDS_IN_PY314 or
+                            not READLINE_AVAILABLE and parts[0] == "history"):
+                            raise ModuleNotFoundError
+
+                        module = importlib.import_module(module_name)
+                    except ModuleNotFoundError as e:
+                        print(
+                            f"{COLOR_RED} Unsupported command {parts[0]}, use {COLOR_END}{COLOR_ORANGE}help{COLOR_END}{COLOR_RED} "
+                            f"to find available commands!{COLOR_END}\n"
+                        )
+                        return
+                    self.current_plugin = module.get_instance(self.port, self.server_pid)
+                    if self.check_need_help(cmd):
+                        help_msg = self.current_plugin.get_help()
+                        if help_msg is not None:
+                            show_normal_info(help_msg)
+                        else:
+                            self.current_plugin.do_action(
+                                cmd[cmd.find(parts[0]) + len(parts[0]) :]
+                            )
                     else:
                         self.current_plugin.do_action(
                             cmd[cmd.find(parts[0]) + len(parts[0]) :]
                         )
-                else:
-                    self.current_plugin.do_action(
-                        cmd[cmd.find(parts[0]) + len(parts[0]) :]
-                    )
-        except KeyboardInterrupt:
-            # Clear ^C from terminal and add newline
-            sys.stdout.write('\r\033[2K\n')
-            sys.stdout.flush()
-            if self.current_plugin is not None:
-                try:
-                    self.current_plugin.on_interrupted()
-                except Exception:
-                    show_error_info(traceback.format_exc())
-        except Exception:
-            show_error_info(traceback.format_exc())
+            except KeyboardInterrupt:
+                sys.stdout.write('\r\033[2K\n')
+                sys.stdout.flush()
+                if self.current_plugin is not None:
+                    try:
+                        self.current_plugin.on_interrupted()
+                    except Exception:
+                        show_error_info(traceback.format_exc())
+            except Exception:
+                show_error_info(traceback.format_exc())
 
     def check_status(self, timeout=None):
         s = time.time()
