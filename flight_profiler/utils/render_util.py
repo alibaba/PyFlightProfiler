@@ -45,25 +45,25 @@ def make_clickable_link(url: str, text: str = None) -> str:
     Create a clickable hyperlink for terminal using OSC 8 escape sequence.
     Works in modern terminals like iTerm2, GNOME Terminal, Windows Terminal, etc.
     Falls back to plain URL for unsupported terminals (e.g., Mac Terminal.app).
-    
+
     Args:
         url: The URL to link to
         text: Display text (defaults to URL if not provided)
-    
+
     Returns:
         Terminal escape sequence for clickable link, or plain URL if unsupported
     """
     if text is None:
         text = url
-    
+
     # Check if terminal supports OSC 8 hyperlinks
     term_program = os.environ.get('TERM_PROGRAM', '')
     term = os.environ.get('TERM', '')
-    
+
     # Known terminals that support OSC 8
     supported_terminals = ['iTerm.app', 'vscode', 'WezTerm', 'Hyper']
     supported_terms = ['xterm-256color', 'screen-256color']
-    
+
     # Check for iTerm2, VSCode, or other known supporting terminals
     is_supported = (
         term_program in supported_terminals or
@@ -72,7 +72,7 @@ def make_clickable_link(url: str, text: str = None) -> str:
         'KONSOLE_VERSION' in os.environ or  # Konsole
         'GNOME_TERMINAL_SCREEN' in os.environ  # GNOME Terminal
     )
-    
+
     if is_supported:
         # OSC 8 format: \033]8;;URL\007TEXT\033]8;;\007
         return f"\033]8;;{url}\007{text}\033]8;;\007"
