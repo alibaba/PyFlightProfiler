@@ -698,9 +698,12 @@ PyFlightProfiler provides a set of **skills** — structured diagnostic instruct
 
 ### Supported AI Agents
 
+Built-in support (one-command install):
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (Anthropic)
 - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (Google)
 - [Codex](https://github.com/openai/codex) (OpenAI)
+
+Other AI coding agents that support skill/instruction files can also use these skills — simply install to a custom directory with `--dir`.
 
 ### Installation
 

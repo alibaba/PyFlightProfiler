@@ -11,7 +11,7 @@
 
 **From manual CLI debugging to AI-assisted diagnostics** — PyFlightProfiler now integrates with AI coding agents. Install the skills and let your AI assistant diagnose live Python processes through natural language.
 
-Supported agents: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | [Codex](https://github.com/openai/codex)
+Built-in support: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | [Codex](https://github.com/openai/codex) — other agents can also use these skills via specific directory installation.
 
 | Skill | Description |
 |-------|-------------|
