@@ -291,8 +291,13 @@ def get_base_addr(current_directory: str, server_pid: str, platform: str) -> int
     base_addr_locate_shell_path = os.path.join(
         current_directory, f"shell/{platform}/py_bin_base_addr_locate.sh"
     )
+    # Pass the lsof-resolved client binary path so the script compares the same
+    # path representation as it derives from the server pid. On macOS framework
+    # Pythons, sys.executable points at bin/pythonX.Y while lsof reports the
+    # Python.app/Contents/MacOS/Python launcher — comparing them directly fails.
+    client_bin_path = get_py_bin_path(os.getpid())
     base_addr = execute_shell(
-        base_addr_locate_shell_path, ["bash", base_addr_locate_shell_path, server_pid, str(sys.executable)]
+        base_addr_locate_shell_path, ["bash", base_addr_locate_shell_path, server_pid, client_bin_path]
     )
     if base_addr is None or len(base_addr) == 0:
         show_error_info(
