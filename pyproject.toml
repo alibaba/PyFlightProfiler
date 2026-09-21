@@ -27,6 +27,7 @@ torch = "*"
 
 [tool.poetry.scripts]
 flight_profiler = "flight_profiler.client:run"
+flight-profiler-mcp = "flight_profiler.mcp.server:main"
 
 [build-system]
 requires = ["poetry-core", "setuptools"]

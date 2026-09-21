@@ -740,3 +740,128 @@ flight_profiler install-skills --dir /path/to/your/skills
 2. **Attach to process** — the AI agent reads the `flight-profiler-attach` skill to understand how to connect to your target Python process
 3. **Diagnose via natural language** — describe what you want to inspect (e.g., "show me what arguments `process_order` receives and how long it takes"), and the AI agent selects the appropriate skill (e.g., `watch`) and constructs the command
 4. **Iterate** — the AI agent can chain multiple commands: use `stack` to locate active code paths, `watch` to observe specific functions, `trace` to drill into bottlenecks, and `reload` to hot-patch fixes
+
+## MCP Server
+
+Skills are instruction files: they teach an agent *how to compose* a PyFlightProfiler
+command line. The MCP server takes the other approach — it exposes the diagnostics as
+tools with typed JSON Schema parameters, so an MCP client validates arguments before
+anything runs and never has to guess a flag name.
+
+Use skills when your agent runs shell commands and reads instruction files. Use the MCP
+server for [Model Context Protocol](https://modelcontextprotocol.io) clients — Claude
+Desktop, Cursor, Windsurf, Cline, Zed, Continue and anything built on an MCP SDK. The two
+can be installed side by side.
+
+### Starting the server
+
+```shell
+flight_profiler mcp                    # read-only diagnostics
+flight_profiler mcp --allow-mutating   # also expose reload / vmtool / raw commands
+```
+
+The server speaks JSON-RPC 2.0 over stdio, uses only the standard library, and is also
+available as `flight-profiler-mcp` and `python -m flight_profiler.mcp`.
+
+### Client configuration
+
+Most clients take the same JSON shape:
+
+```json
+{
+  "mcpServers": {
+    "pyflightprofiler": {
+      "command": "flight_profiler",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+| Client | Configuration file |
+| --- | --- |
+| Claude Desktop | `claude_desktop_config.json` |
+| Claude Code | `claude mcp add pyflightprofiler -- flight_profiler mcp` |
+| Cursor | `.cursor/mcp.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Zed / Cline / Continue | their own MCP settings section |
+
+If several Python environments are in play, point `command` at the interpreter that is
+most convenient — the server resolves each *target's* environment separately, so it does
+not need to share one with the processes it diagnoses.
+
+### Tools
+
+| Tool | Purpose | Exposed by default |
+| --- | --- | --- |
+| `list_python_processes` | List Python processes with PID, owner and command line | ✅ |
+| `check_attach_target` | Verify a PID can be attached; report the exact install command if not | ✅ |
+| `stack` | Thread stacks, optionally with native frames and async task stacks | ✅ |
+| `watch` | Capture a function's arguments, return value, exception and timing | ✅ |
+| `trace` | Call tree with per-call timings inside a function | ✅ |
+| `getglobal` | Read module globals and class static attributes | ✅ |
+| `module` | Translate a file path to its module name | ✅ |
+| `vmtool` | Inspect live instances, invoke methods, force GC | `--allow-mutating` |
+| `reload` | Hot-reload a function from updated source | `--allow-mutating` |
+| `run_profiler_command` | Run any command verbatim: `perf`, `mem`, `gilstat`, `tt`, `torch`, … | `--allow-mutating` |
+
+Every process tool takes `pid`, a `timeout_seconds` deadline (default 30) and
+`max_output_chars` (default 20000). Module, class and function arguments are validated
+before a command is built, because PyFlightProfiler's argument tokenizer splits on
+whitespace and has no notion of quoting.
+
+The tools normalise one CLI inconsistency: `watch` spells the module argument `--pkg`
+while `trace`, `getglobal` and `reload` spell it `--mod`. Every tool here takes `module`.
+
+### Why mutating tools are separated
+
+An agent decides on its own which tools to call. `reload` rewrites a function in a live
+process, `vmtool` can invoke methods on live instances, and `run_profiler_command` can run
+anything at all — including `console`, which executes arbitrary code inside the target.
+
+Those three are not advertised unless you start the server with `--allow-mutating`, so the
+default surface an autonomous agent sees is read-only observation. Turn them on
+deliberately, for a session where hot-patching is what you actually want.
+
+### Environment resolution
+
+PyFlightProfiler must run from the same Python environment as its target: the injected
+agent imports `flight_profiler` from inside the target process. This is the most common
+attach failure and it is invisible from the outside.
+
+For each PID the server resolves the target's interpreter, then prefers the
+`flight_profiler` console script sitting next to it, falling back to
+`<target python> -m flight_profiler.client`. One server can therefore diagnose processes
+across conda envs, virtualenvs and the system Python. When the package is missing from the
+target's environment, `check_attach_target` says so and returns the install command for
+that specific environment:
+
+```
+pid: 51234
+python: /opt/envs/serving/bin/python3.11
+status: cannot attach -- flight_profiler is not installed in this process's Python environment
+fix: /opt/envs/serving/bin/python3.11 -m pip install flight_profiler
+```
+
+### Deadlines
+
+`watch` and `trace` return only once they have captured `limit` invocations, which never
+happens if the function is not called. Every tool call is therefore bounded by
+`timeout_seconds`.
+
+When the deadline hits, the server sends the client `SIGINT` — the same signal Ctrl-C
+sends — so it removes the instrumentation it installed before exiting. It escalates to a
+kill only if the client ignores that, and says so explicitly in the result. A deadline is
+reported as a result, not a failure: it means the observed code did not run in the window,
+which usually points at the wrong process or the wrong module.
+
+### Example session
+
+> "The recommendation service is slow. Find out why."
+
+1. `list_python_processes(name_filter="recommend")` — several PIDs; the launcher and its workers
+2. `check_attach_target(pid=…)` — confirms the worker is attachable
+3. `stack(pid=…)` — shows which files the worker is executing right now
+4. `module(pid=…, file_path="/srv/app/ranking.py")` — resolves `app.ranking`
+5. `watch(pid=…, module="app.ranking", function="rank", limit=3, timeout_seconds=30)` — the call takes 800 ms
+6. `trace(pid=…, module="app.ranking", function="rank", min_cost_ms=50)` — a feature lookup inside it accounts for 700 ms

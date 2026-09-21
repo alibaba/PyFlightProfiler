@@ -32,6 +32,43 @@ flight_profiler install-skills
 > [!Tip]
 > See the [AI Coding Agent Skills](docs/WIKI.md#ai-coding-agent-skills) section in the Wiki for detailed usage and workflow.
 
+### MCP Server
+
+Skills teach an agent to compose CLI commands. For clients that speak the
+[Model Context Protocol](https://modelcontextprotocol.io) — Claude Desktop, Cursor,
+Windsurf, Cline, Zed, Continue and anything built on an MCP SDK — PyFlightProfiler
+also ships an MCP server that exposes the same diagnostics as typed tools:
+
+```shell
+flight_profiler mcp
+```
+
+```json
+{
+  "mcpServers": {
+    "pyflightprofiler": {
+      "command": "flight_profiler",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Read-only diagnostics (`stack`, `watch`, `trace`, `getglobal`, `module`, plus process
+discovery) are exposed by default. Tools that can change a running process — `reload`,
+`vmtool` and the raw command escape hatch — stay hidden until you start the server with
+`--allow-mutating`, so an agent calling tools on its own cannot hot-patch production by
+accident.
+
+The server resolves the target's **own** Python environment per PID and runs the
+`flight_profiler` installed there, so a single server can diagnose processes across
+different conda envs and virtualenvs — the environment mismatch that causes most attach
+failures is detected up front, with the exact install command to fix it.
+
+> [!Tip]
+> See [MCP Server](docs/WIKI.md#mcp-server) in the Wiki for the full tool reference and
+> per-client configuration.
+
 ## Background
 The growing demand for AI inference and agent-based applications has led to an increased deployment of Python systems in production environments. Inference services frequently encounter performance bottlenecks, while agent-based services face challenges in troubleshooting complex business logic. Production issues are often difficult to reproduce and debug, and traditional logging-based diagnostics typically result in prolonged investigation cycles with limited efficiency. PyFlightProfiler is designed to help address some of these common pain points.
 

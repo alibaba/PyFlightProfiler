@@ -585,12 +585,20 @@ def run():
         _install_skills()
         return
 
+    if len(sys.argv) >= 2 and sys.argv[1] == "mcp":
+        # Imported lazily so the attach path does not pay for it.
+        from flight_profiler.mcp.server import main as mcp_main
+
+        sys.exit(mcp_main(sys.argv[2:]))
+
     parser = argparse.ArgumentParser(
         usage="%(prog)s <pid> [options]\n       %(prog)s install-skills [--dir <path>]"
+              "\n       %(prog)s mcp [--allow-mutating]"
               "\n\ndescription: A realtime analysis tool used for profiling python program!\n",
         epilog="subcommands:\n"
                "  install-skills          Install Claude Code / Gemini CLI / Codex skills\n"
-               "  install-skills --dir D  Install skills to a custom directory\n",
+               "  install-skills --dir D  Install skills to a custom directory\n"
+               "  mcp                     Serve PyFlightProfiler to MCP clients over stdio\n",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(

@@ -740,3 +740,115 @@ flight_profiler install-skills --dir /path/to/your/skills
 2. **附着到进程** —— AI 智能体读取 `flight-profiler-attach` Skill，了解如何连接到目标 Python 进程
 3. **自然语言诊断** —— 描述你想检查的内容（例如"看看 `process_order` 接收了什么参数，执行耗时多少"），AI 智能体会选择合适的 Skill（如 `watch`）并构建命令
 4. **迭代分析** —— AI 智能体可以串联多个命令：用 `stack` 定位活跃代码路径，用 `watch` 观测特定函数，用 `trace` 深入瓶颈，用 `reload` 热修复
+
+## MCP Server
+
+Skills 是指令文件，教会智能体**如何拼装** PyFlightProfiler 命令行。MCP Server 走的是另一条路
+——把诊断能力暴露为带 JSON Schema 类型定义的工具，MCP 客户端在执行前就能校验参数，也不必再猜
+命令行选项的名字。
+
+如果你的智能体会执行 shell 命令并读取指令文件，用 Skills；如果是
+[Model Context Protocol](https://modelcontextprotocol.io) 客户端 —— Claude Desktop、Cursor、
+Windsurf、Cline、Zed、Continue 以及任何基于 MCP SDK 构建的工具 —— 用 MCP Server。两者可以同时安装。
+
+### 启动服务
+
+```shell
+flight_profiler mcp                    # 只读诊断
+flight_profiler mcp --allow-mutating   # 额外暴露 reload / vmtool / 原始命令
+```
+
+服务基于 stdio 上的 JSON-RPC 2.0 协议，仅依赖标准库，同时也可通过 `flight-profiler-mcp` 和
+`python -m flight_profiler.mcp` 启动。
+
+### 客户端配置
+
+多数客户端使用相同的 JSON 结构：
+
+```json
+{
+  "mcpServers": {
+    "pyflightprofiler": {
+      "command": "flight_profiler",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+| 客户端 | 配置位置 |
+| --- | --- |
+| Claude Desktop | `claude_desktop_config.json` |
+| Claude Code | `claude mcp add pyflightprofiler -- flight_profiler mcp` |
+| Cursor | `.cursor/mcp.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Zed / Cline / Continue | 各自的 MCP 配置区块 |
+
+如果机器上存在多个 Python 环境，`command` 指向任意一个方便的解释器即可 —— 服务会**分别**解析每个
+目标进程自己的环境，不需要和被诊断的进程共用环境。
+
+### 工具列表
+
+| 工具 | 作用 | 默认暴露 |
+| --- | --- | --- |
+| `list_python_processes` | 列出 Python 进程的 PID、属主与完整命令行 | ✅ |
+| `check_attach_target` | 校验 PID 能否附着；不能则给出精确的安装命令 | ✅ |
+| `stack` | 线程栈，可选 native 帧与 async 协程栈 | ✅ |
+| `watch` | 捕获函数的入参、返回值、异常与耗时 | ✅ |
+| `trace` | 函数内部调用树与逐层耗时 | ✅ |
+| `getglobal` | 读取模块全局变量与类静态属性 | ✅ |
+| `module` | 把文件路径翻译成模块名 | ✅ |
+| `vmtool` | 查找存活实例、调用方法、强制 GC | `--allow-mutating` |
+| `reload` | 从更新后的源码热加载函数 | `--allow-mutating` |
+| `run_profiler_command` | 逐字执行任意命令：`perf`、`mem`、`gilstat`、`tt`、`torch` 等 | `--allow-mutating` |
+
+所有进程类工具都接受 `pid`、`timeout_seconds`（默认 30 秒）与 `max_output_chars`（默认 20000）。
+模块名、类名、函数名在拼装命令前会先做校验 —— PyFlightProfiler 的参数分词按空白切分，不支持引号转义。
+
+这些工具还统一了 CLI 的一处不一致：`watch` 的模块参数叫 `--pkg`，而 `trace`、`getglobal`、`reload`
+叫 `--mod`。在 MCP 工具里一律是 `module`。
+
+### 为什么要隔离有副作用的工具
+
+智能体是自行决定调用哪个工具的。`reload` 会改写线上进程里的函数，`vmtool` 能对存活实例调用方法，
+`run_profiler_command` 则可以执行任意命令 —— 包括在目标进程内运行任意代码的 `console`。
+
+这三个工具只有在启动时显式带上 `--allow-mutating` 才会被暴露，因此自主运行的智能体默认只能看到只读
+观测能力。需要热修复时，再有意识地把它打开。
+
+### 环境解析
+
+PyFlightProfiler 必须运行在与目标进程相同的 Python 环境中：注入的 agent 是在目标进程**内部**
+import `flight_profiler` 的。这是最常见的附着失败原因，而且从外部看不出来。
+
+对每个 PID，服务会先解析目标进程的解释器，优先使用与之同目录的 `flight_profiler` 可执行脚本，
+其次回退到 `<目标 python> -m flight_profiler.client`。因此一个服务进程可以同时诊断分布在不同
+conda 环境、virtualenv 和系统 Python 下的进程。当目标环境缺少该包时，`check_attach_target`
+会直接给出针对那个环境的安装命令：
+
+```
+pid: 51234
+python: /opt/envs/serving/bin/python3.11
+status: cannot attach -- flight_profiler is not installed in this process's Python environment
+fix: /opt/envs/serving/bin/python3.11 -m pip install flight_profiler
+```
+
+### 超时控制
+
+`watch` 和 `trace` 只有在捕获到 `limit` 次调用后才会返回，而如果目标函数一直没被调用，这一刻永远不会
+到来。因此每次工具调用都由 `timeout_seconds` 兜底。
+
+超时触发时，服务先向客户端发送 `SIGINT`（与 Ctrl-C 相同的信号），让它在退出前把已安装的插桩清理干净；
+只有客户端忽略该信号时才会升级为强杀，并在结果中明确说明。超时被当作一种**结果**而非失败：它说明在这个
+时间窗口内目标代码没有被执行，通常意味着选错了进程或模块。
+
+### 一次完整的诊断
+
+> "推荐服务变慢了，查一下原因。"
+
+1. `list_python_processes(name_filter="recommend")` —— 列出若干 PID：启动进程及其 worker
+2. `check_attach_target(pid=…)` —— 确认 worker 可以附着
+3. `stack(pid=…)` —— 看清 worker 此刻正在执行哪些文件
+4. `module(pid=…, file_path="/srv/app/ranking.py")` —— 解析出 `app.ranking`
+5. `watch(pid=…, module="app.ranking", function="rank", limit=3, timeout_seconds=30)` —— 单次调用耗时 800 ms
+6. `trace(pid=…, module="app.ranking", function="rank", min_cost_ms=50)` —— 其中的特征查询占了 700 ms
