@@ -1,10 +1,28 @@
 import os
 import re
 import shutil
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from typing import List, Optional, Tuple
 
 from flight_profiler.common.expression_result import ExpressionResult
+
+
+def package_version() -> str:
+    """
+    Return the installed flight_profiler version, or a placeholder.
+
+    Distribution metadata only exists once the package has been pip-installed.
+    Running straight from a source checkout -- a clone on PYTHONPATH, a vendored
+    copy, the test suite -- is legitimate and must not fail at import time just
+    because a banner wants a version number.
+
+    Returns:
+        str: the version, or "unknown" when no metadata is present.
+    """
+    try:
+        return version("flight_profiler")
+    except PackageNotFoundError:
+        return "unknown"
 
 """ Colors
 """
@@ -157,7 +175,7 @@ BOX_ROUND_BOTTOM_RIGHT = "╯"
 
 ENTRANCE_HINTS = [
     ("wiki", "https://github.com/alibaba/PyFlightProfiler/blob/main/docs/WIKI.md"),
-    ("version", version("flight_profiler")),
+    ("version", package_version()),
 ]
 
 EXIT_CODE_HINTS = [
@@ -412,7 +430,7 @@ def build_welcome_box(pid: str, py_executable: str) -> None:
         pid: Target process ID
         py_executable: Path to Python executable
     """
-    ver = version("flight_profiler")
+    ver = package_version()
     terminal_width = shutil.get_terminal_size().columns
     box_width = min(80, terminal_width - 2)
 

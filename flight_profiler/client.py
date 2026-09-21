@@ -12,7 +12,6 @@ import tempfile
 import time
 import traceback
 from contextlib import nullcontext
-from importlib.metadata import version
 from pathlib import Path
 from subprocess import PIPE, Popen
 from typing import Any, Dict
@@ -39,6 +38,7 @@ from flight_profiler.utils.render_util import (
     COLOR_RED,
     COLOR_WHITE_255,
     build_welcome_box,
+    package_version,
 )
 from flight_profiler.utils.shell_util import execute_shell, get_py_bin_path
 from flight_profiler.utils.terminal_input import BoxLineEditor
@@ -449,7 +449,7 @@ def show_pre_attach_info(server_pid: str, debug: bool = False) -> list:
     client_uids = get_current_process_uids()
 
     # Collect diagnostic information
-    messages.append(f"PyFlightProfiler version: {version('flight_profiler')}")
+    messages.append(f"PyFlightProfiler version: {package_version()}")
     messages.append(f"[INFO] Platform system: {platform.system()}. Architecture: {platform.machine()}")
     messages.append(f"[INFO] Installation directory: {current_directory}.")
     if debug:
