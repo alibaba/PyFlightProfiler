@@ -733,6 +733,11 @@ flight_profiler install-skills --dir /path/to/your/skills
 | `flight-profiler-vmtool` | 查找类的所有活跃实例、检查其属性，或调用实例的诊断方法。同时支持强制垃圾回收。 |
 | `flight-profiler-reload` | 从更新后的源文件热更新函数实现，无需重启进程。通过 watch/trace 定位 bug 后可直接在线修复。 |
 | `flight-profiler-module` | 将文件路径转换为目标进程中的 Python 模块名。当你知道文件路径但需要模块名来执行其他命令时使用。 |
+| `flight-profiler-perf` | 对整个进程采样并生成火焰图 SVG。当服务变慢但还没有怀疑目标时，从这里开始。 |
+| `flight-profiler-gilstat` | 逐线程的 GIL 统计：等待获取锁的时间与持有锁的时间。适用于 CPU 未跑满却依然很慢的服务。 |
+| `flight-profiler-torch` | PyTorch 算子在 CPU/CUDA 上的耗时分析与 CUDA 显存快照，用于推理延迟与显存 OOM 排查。 |
+| `flight-profiler-mem` | 按类型统计 Python 堆内存，支持快照与区间 diff。用于 RSS 持续增长与内存泄漏。 |
+| `flight-profiler-tt` | 时间隧道：把方法调用录制为带编号的片段，事后查看或回放。用于偶发故障。 |
 
 ### 使用流程
 

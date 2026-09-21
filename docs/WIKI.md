@@ -733,6 +733,11 @@ flight_profiler install-skills --dir /path/to/your/skills
 | `flight-profiler-vmtool` | Find all live instances of a class, examine their attributes, or invoke diagnostic methods on them. Also supports forcing garbage collection. |
 | `flight-profiler-reload` | Hot-reload a function implementation from updated source code without restarting the process. Apply fixes live after identifying a bug with watch/trace. |
 | `flight-profiler-module` | Translate a file path to its Python module name in the target process. Use when you know a file path but need the module name for other commands. |
+| `flight-profiler-perf` | Sample the whole process and render a flame graph SVG. The starting point when something is slow and no function is suspected yet. |
+| `flight-profiler-gilstat` | Per-thread GIL statistics: how long each thread waits to acquire the lock and how long it holds it. For services that are slow without being CPU-bound. |
+| `flight-profiler-torch` | PyTorch operator profiling on CPU/CUDA and CUDA memory snapshots, for inference latency and GPU out-of-memory investigations. |
+| `flight-profiler-mem` | Python heap usage by type, as a summary or as a diff over an interval. For unbounded RSS growth and leaks. |
+| `flight-profiler-tt` | Time tunnel: record method invocations into numbered fragments, then inspect or replay them later. For intermittent failures. |
 
 ### Workflow
 

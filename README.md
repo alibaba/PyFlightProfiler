@@ -23,6 +23,11 @@ Built-in support: [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 
 | `flight-profiler-vmtool` | Find and inspect live class instances, invoke diagnostic methods |
 | `flight-profiler-reload` | Hot-reload a function from updated source without restarting |
 | `flight-profiler-module` | Translate a file path to its Python module name |
+| `flight-profiler-perf` | Sample the whole process and write a flame graph SVG |
+| `flight-profiler-gilstat` | Measure GIL contention — wait and hold time per thread |
+| `flight-profiler-torch` | Profile PyTorch operator time and CUDA memory behaviour |
+| `flight-profiler-mem` | Summarise or diff Python heap usage by type |
+| `flight-profiler-tt` | Record invocations over time, then inspect and replay them |
 
 ```shell
 # One-command install to Claude Code / Gemini CLI / Codex
