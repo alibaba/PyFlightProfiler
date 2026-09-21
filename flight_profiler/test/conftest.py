@@ -11,7 +11,6 @@ conftest probes for the artefacts and deselects exactly what cannot work.
 A full build still runs the full suite; the header line says what was left out.
 """
 
-import importlib
 import os
 import sys
 
@@ -31,11 +30,16 @@ _EXTENSION_BACKED_TESTS = {
 }
 
 # Integration tests spawn a target process and attach to it, which needs the
-# injectable agent library. They are named consistently, so a glob is enough.
-_INTEGRATION_TEST_GLOB = "**/*_plugin_test.py"
+# injectable agent library. They are found by their use of the harness rather
+# than by filename: the naming is not consistent -- perf_server_test.py is one
+# of them -- and a new integration test should be recognised whatever it is
+# called.
+_INTEGRATION_HARNESS = "ProfileIntegration"
 
 
 def _extension_available(module_name):
+    import importlib
+
     try:
         importlib.import_module(module_name)
     except ImportError:
@@ -49,24 +53,46 @@ def _agent_library_built():
     return os.path.isfile(library)
 
 
-collect_ignore = [
+def _integration_tests():
+    """Paths, relative to this directory, of tests that attach to a process."""
+    found = []
+    for directory, _subdirectories, filenames in os.walk(_TEST_ROOT):
+        for filename in filenames:
+            if not filename.endswith("_test.py"):
+                continue
+            path = os.path.join(directory, filename)
+            try:
+                with open(path, encoding="utf-8") as handle:
+                    source = handle.read()
+            except OSError:
+                continue
+            if _INTEGRATION_HARNESS in source:
+                found.append(os.path.relpath(path, _TEST_ROOT))
+    return sorted(found)
+
+
+_missing_extensions = [
     path
     for path, extension in sorted(_EXTENSION_BACKED_TESTS.items())
     if not _extension_available(extension)
 ]
-collect_ignore_glob = [] if _agent_library_built() else [_INTEGRATION_TEST_GLOB]
+_missing_agent = [] if _agent_library_built() else _integration_tests()
+
+collect_ignore = _missing_extensions + _missing_agent
 
 
 def pytest_report_header(config):
     """Say what was deselected, so a short run is never mistaken for a full one."""
     missing = []
-    if collect_ignore:
+    if _missing_extensions:
         missing.append("C extensions (flight_profiler/ext)")
-    if collect_ignore_glob:
+    if _missing_agent:
         missing.append("agent library (flight_profiler/lib)")
     if not missing:
         return None
     return (
-        "flight_profiler: {} not built -- skipping the tests that need them. "
-        "Run `make test` for the full suite.".format(" and ".join(missing))
+        "flight_profiler: {} not built -- skipping {} test module(s) that need them. "
+        "Run `make test` for the full suite.".format(
+            " and ".join(missing), len(collect_ignore)
+        )
     )
