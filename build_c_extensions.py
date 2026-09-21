@@ -1,9 +1,8 @@
 """Build script."""
 
 import shutil
-from pathlib import Path
-
 from distutils.errors import CCompilerError, DistutilsExecError, DistutilsPlatformError
+from pathlib import Path
 
 from setuptools import Extension
 from setuptools.command.build_ext import build_ext

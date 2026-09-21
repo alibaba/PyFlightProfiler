@@ -48,6 +48,13 @@ test: install
 	@export PYTHONPATH=${BASE_DIR}:$PYTHONPATH
 	@$(SUDO_CMD) pytest ${BASE_DIR}/flight_profiler/test
 
+# Everything that runs without the C extensions or the agent library. Seconds
+# rather than minutes, and no toolchain needed -- the rest is deselected
+# automatically by flight_profiler/test/conftest.py.
+unit-test:
+	@echo "unit test (no build required)"
+	@PYTHONPATH=${BASE_DIR}:$PYTHONPATH pytest ${BASE_DIR}/flight_profiler/test
+
 install: clean build
 	@echo "poetry install"
 	@pip3 uninstall -y flight_profiler || true

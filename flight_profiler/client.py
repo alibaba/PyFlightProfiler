@@ -497,17 +497,17 @@ def show_pre_attach_info(server_pid: str, debug: bool = False) -> list:
 def _install_skills():
     """Install PyFlightProfiler skills to Claude Code, Gemini CLI, and Codex skill directories."""
     from flight_profiler.utils.render_util import (
+        COLOR_BOLD,
         COLOR_END,
         COLOR_FAINT,
         COLOR_GREEN,
         COLOR_RED,
         COLOR_WHITE_255,
         COLOR_YELLOW,
-        COLOR_BOLD,
-        ICON_SUCCESS,
-        ICON_FAILED,
-        ICON_WARNING,
         ICON_DOT,
+        ICON_FAILED,
+        ICON_SUCCESS,
+        ICON_WARNING,
     )
 
     # Packaged layout: flight_profiler/skills/  |  Dev layout: <project_root>/skills/

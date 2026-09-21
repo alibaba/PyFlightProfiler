@@ -6,8 +6,62 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run pre-commit hooks
+        uses: pre-commit/action@v3.0.1
+        env:
+          # A commit-time guard, not a code-quality check: CI is meant to run
+          # against main.
+          SKIP: no-commit-to-branch
+
+  unit:
+    # Fast feedback across every interpreter the package claims to support.
+    # These tests need neither the C extensions nor the agent library, so they
+    # run in seconds without the full build -- the integration job below still
+    # covers the compiled paths.
+    name: Unit (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies
+        # pympler and pystack are imported lazily inside the plugins that use
+        # them, so the unit suite needs nothing but pytest.
+        run: pip install pytest
+
+      - name: Run unit tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest flight_profiler/test -q
+
   test:
+    name: Integration (Rocky Linux 8, Python 3.10)
     # Rocky Linux 8 (CentOS 8 compatible), glibc 2.28
     runs-on: ubuntu-latest
     container:
