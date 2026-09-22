@@ -156,12 +156,44 @@ The stack output lists all active Python files and functions per thread. Compare
 All commands use this format:
 
 ```bash
-flight_profiler <pid> --cmd "<command>" --no-color
+flight_profiler <pid> --cmd "<command>" --no-color --timeout <seconds>
 ```
 
 - `<pid>` — target process PID
 - `--cmd` — single-shot mode (run one command and exit, no interactive REPL)
 - `--no-color` — disable ANSI colors for clean text output
+- `--timeout` — stop after N seconds and exit with code 124
+
+### Always pass `--timeout` for streaming commands
+
+`watch`, `trace`, `tt` and `gilstat` print a record each time the observed code
+runs, and they only return once their display limit (`-n`) is reached. If the
+function is never called — wrong module, idle service, wrong worker process —
+the command blocks forever and your session hangs.
+
+Pass a deadline that matches how often you expect the code to run:
+
+```bash
+# A busy request handler: a few seconds is plenty
+flight_profiler <pid> --cmd "watch --pkg app.api --func handle -n 3" --no-color --timeout 15
+
+# A background job that runs every minute
+flight_profiler <pid> --cmd "watch --pkg app.jobs --func sync -n 1" --no-color --timeout 90
+```
+
+Exit code `124` means the deadline was reached. That is a normal outcome, not a
+crash: it tells you the function was not called during the window. When you see
+it, report that no invocation was observed and consider whether you targeted the
+right process (see "Multi-process architecture" above) or the right module.
+
+**Never kill the client to escape a hanging command.** `watch` and `trace`
+install instrumentation inside the target process, and the client removes it on
+exit. `--timeout` and Ctrl-C both take that clean path; `kill -9` leaves the
+instrumentation running in production.
+
+Point-in-time commands (`stack`, `getglobal`, `module`, `vmtool`) return
+immediately, so a deadline is optional there — though a small one is still good
+practice in case the target process is stuck holding the GIL.
 
 ### What happens on first connect
 

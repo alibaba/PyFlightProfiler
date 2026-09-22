@@ -27,6 +27,7 @@ from flight_profiler.plugins.help.help_agent import HELP_COMMANDS_NAMES
 from flight_profiler.utils.cli_util import (
     show_error_info,
     show_normal_info,
+    show_warning_info,
     verify_exit_code,
 )
 from flight_profiler.utils.env_util import is_linux, is_mac, py_higher_than_314
@@ -42,6 +43,7 @@ from flight_profiler.utils.render_util import (
 )
 from flight_profiler.utils.shell_util import execute_shell, get_py_bin_path
 from flight_profiler.utils.terminal_input import BoxLineEditor
+from flight_profiler.utils.timeout_util import TIMEOUT_EXIT_CODE, command_timeout
 
 # Check readline availability, which may not be enabled in some python distribution.
 try:
@@ -580,6 +582,38 @@ def _install_skills():
     print(f"\n  {COLOR_FAINT}✨ Skills are now available in {', '.join(labels)}.{COLOR_END}\n")
 
 
+def resolve_cmd_timeout(args, parser):
+    """
+    Resolve the one-shot command deadline from --timeout, falling back to the
+    PYFLIGHT_CMD_TIMEOUT environment variable.
+
+    Args:
+        args: parsed command line arguments
+        parser: the parser to report usage errors through
+
+    Returns:
+        float: the deadline in seconds, or None when the run is unbounded
+    """
+    timeout = getattr(args, "timeout", None)
+    source = "--timeout"
+    if timeout is None:
+        raw = os.getenv("PYFLIGHT_CMD_TIMEOUT")
+        if not raw:
+            return None
+        source = "PYFLIGHT_CMD_TIMEOUT"
+        try:
+            timeout = float(raw)
+        except ValueError:
+            parser.error(f"PYFLIGHT_CMD_TIMEOUT must be a number, got {raw!r}")
+    if timeout <= 0:
+        parser.error(f"{source} must be greater than 0, got {timeout:g}")
+    if getattr(args, "cmd", None) is None:
+        # The interactive REPL already stops on Ctrl-C; a deadline there would
+        # cut the session off mid-session for no reason.
+        parser.error(f"{source} only applies to one-shot runs, pass --cmd as well")
+    return timeout
+
+
 def run():
     if len(sys.argv) >= 2 and sys.argv[1] == "install-skills":
         _install_skills()
@@ -601,10 +635,19 @@ def run():
     parser.add_argument("--cmd", required=False, type=str, help="One-time profile, primarily used for unit testing.")
     parser.add_argument("--debug", required=False, action="store_true", help="enable debug logging for attachment.")
     parser.add_argument("--no-color", required=False, action="store_true", dest="no_color", help="Disable colored output (also respects NO_COLOR env var).")
+    parser.add_argument(
+        "--timeout",
+        required=False,
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="stop a --cmd run after SECONDS and exit 124 (also respects PYFLIGHT_CMD_TIMEOUT).",
+    )
     try:
         args = parser.parse_args()
     except:
         exit(1)
+    cmd_timeout = resolve_cmd_timeout(args, parser)
     # Disable colors if --no-color flag or NO_COLOR env var is set
     if getattr(args, "no_color", False) or os.getenv("NO_COLOR"):
         from flight_profiler.utils.render_util import _NoColorStream
@@ -680,9 +723,21 @@ def run():
         cmd_args = getattr(args, "cmd")
         if READLINE_AVAILABLE:
             readline.add_history(cmd_args)
-        cli.do_action(cmd_args)
+        with command_timeout(cmd_timeout) as deadline:
+            try:
+                cli.do_action(cmd_args)
+            except KeyboardInterrupt:
+                # do_action swallows its own KeyboardInterrupt; this only fires
+                # when the deadline lands just outside that handler.
+                pass
         if READLINE_AVAILABLE:
             readline.write_history_file(cli.history_file)
+        if deadline.expired:
+            show_warning_info(
+                f"Command stopped after --timeout {deadline.seconds:g}s. "
+                f"Any instrumentation it installed has been removed from process {server_pid}."
+            )
+            exit(TIMEOUT_EXIT_CODE)
         exit(0)
 
     def handler(signum, frame):

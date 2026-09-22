@@ -82,17 +82,33 @@ PyFlightProfiler follows a two-stage attach-then-profile workflow. After attachi
 The first step for attachment is to use the `flight_profiler` command followed by the PID of the process you want to analyze.
 
 ```shell
-usage: flight_profiler <pid>
+usage: flight_profiler <pid> [options]
+       flight_profiler install-skills [--dir <path>]
 
 description: A realtime analysis tool used for profiling python program!
 
 positional arguments:
-  pid         python process id to analyze.
+  pid                python process id to analyze.
 
 optional arguments:
-  -h, --help  show this help message and exit
-  --cmd CMD   One-time profile, primarily used for unit testing.
-  --debug     enable debug logging for attachment.
+  -h, --help         show this help message and exit
+  --cmd CMD          run a single command and exit, instead of opening the REPL.
+  --debug            enable debug logging for attachment.
+  --no-color         Disable colored output (also respects NO_COLOR env var).
+  --timeout SECONDS  stop a --cmd run after SECONDS and exit 124 (also
+                     respects PYFLIGHT_CMD_TIMEOUT).
+```
+
+`--timeout` matters for anything non-interactive. Streaming commands such as
+`watch`, `trace` and `tt` run until their display limit is reached, which never
+happens if the observed function is not called — so a script, CI job or AI agent
+would wait forever. With a deadline the run stops the same way Ctrl-C does: the
+instrumentation is removed from the target process and the client exits 124,
+the same code GNU `timeout` uses.
+
+```shell
+# Give up after 30s rather than blocking the caller indefinitely
+flight_profiler 1234 --cmd "watch --pkg app.service --func handle" --no-color --timeout 30
 ```
 
 For CPython 3.14 and above, we utilize sys.remote_exec for remote code execution, a feature introduced by [PEP-0768](https://peps.python.org/pep-0768/). This approach is therefore largely safe.

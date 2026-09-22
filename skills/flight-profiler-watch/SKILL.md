@@ -20,10 +20,13 @@ Display the input/output args, return object and cost time of method invocation.
 ## Usage
 
 ```
-flight_profiler <pid> --cmd "watch module [class] method [options]" --no-color
+flight_profiler <pid> --cmd "watch module [class] method [options]" --no-color --timeout <seconds>
 ```
 
-Use `-n` to limit capture count so the command auto-exits.
+`-n` bounds how many invocations are captured; `--timeout` bounds how long to
+wait for them. Always pass both — without a deadline the command blocks forever
+when the target function is never called. Exit code `124` means the window
+elapsed with no invocation observed, which is a result, not an error.
 
 ## Positional Arguments
 

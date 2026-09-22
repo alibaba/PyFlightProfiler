@@ -19,8 +19,13 @@ Trace the execution time of a specified method invocation, displaying a call tre
 ## Usage
 
 ```
-flight_profiler <pid> --cmd "trace module [class] method [options]" --no-color
+flight_profiler <pid> --cmd "trace module [class] method [options]" --no-color --timeout <seconds>
 ```
+
+`-n` bounds how many invocations are captured; `--timeout` bounds how long to
+wait for them. Always pass both — without a deadline the command blocks forever
+when the target function is never called. Exit code `124` means the window
+elapsed with no invocation observed, which is a result, not an error.
 
 ## Positional Arguments
 
